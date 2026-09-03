@@ -18,9 +18,12 @@ pub struct Tally {
 }
 
 /// Count `ballots` under `policy`. Each approver counts once, by their
-/// latest ballot; ballots from outside the policy are reported as ignored
-/// rather than dropped silently, so an audit can see a removed approver's
-/// history.
+/// latest ballot (highest `at_ns`; on a tie, the later one in the list),
+/// the same rule [`cast`] enforces when it writes, so a list assembled
+/// elsewhere (an off-chain verifier collecting signed records) tallies the
+/// way the canister does. Ballots from outside the policy are reported as
+/// ignored rather than dropped silently, so an audit can see a removed
+/// approver's history.
 pub fn tally(policy: &Policy, ballots: &[Approval]) -> Tally {
     let mut latest: BTreeMap<&[u8], &Approval> = BTreeMap::new();
     for b in ballots {
@@ -49,8 +52,20 @@ pub fn tally(policy: &Policy, ballots: &[Approval]) -> Tally {
     t
 }
 
-/// Add a ballot to a list, replacing any earlier ballot by the same approver.
-pub fn cast(ballots: &mut Vec<Approval>, approval: Approval) {
+/// Add a ballot to a list, replacing any earlier ballot by the same
+/// approver. Returns `false` and leaves the list untouched when the
+/// approver's existing ballot has a later `at_ns`: a signed ballot is a
+/// bearer record anyone can resubmit, and an old one must not undo the
+/// signer's newer decision. Equal `at_ns` replaces, so resubmitting the
+/// same ballot is idempotent.
+pub fn cast(ballots: &mut Vec<Approval>, approval: Approval) -> bool {
+    let newer_exists = ballots
+        .iter()
+        .any(|b| b.approver == approval.approver && b.at_ns > approval.at_ns);
+    if newer_exists {
+        return false;
+    }
     ballots.retain(|b| b.approver != approval.approver);
     ballots.push(approval);
+    true
 }

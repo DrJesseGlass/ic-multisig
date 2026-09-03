@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 /// by [`Subject::key`]; tests use [`MemoryStore`].
 pub trait Store {
     fn load(&self, subject: &Subject) -> Vec<Approval>;
-    fn save(&mut self, subject: &Subject, ballots: &[Approval]);
+    fn save(&mut self, subject: &Subject, ballots: Vec<Approval>);
 }
 
 #[derive(Default, Debug)]
@@ -20,15 +20,18 @@ impl Store for MemoryStore {
         self.0.get(&subject.key()).cloned().unwrap_or_default()
     }
 
-    fn save(&mut self, subject: &Subject, ballots: &[Approval]) {
-        self.0.insert(subject.key(), ballots.to_vec());
+    fn save(&mut self, subject: &Subject, ballots: Vec<Approval>) {
+        self.0.insert(subject.key(), ballots);
     }
 }
 
 /// Validate an approval against the policy, persist it, and return the new
 /// tally. This is the one entry point a canister endpoint should call: it
-/// refuses outsiders, enforces the policy's signature rule, and verifies a
-/// signature when one is present and the build can.
+/// refuses outsiders, enforces the policy's signature rule, refuses a
+/// ballot older than the approver's recorded one, and verifies any
+/// signature present. A signature this build cannot verify (no `ed25519`
+/// feature, or an approver that is not a 32-byte key) is refused rather
+/// than stored unchecked, whatever the policy's signature rule says.
 pub fn record(
     store: &mut impl Store,
     policy: &Policy,
@@ -45,15 +48,16 @@ pub fn record(
         Some(_) => verify(subject, &approval)?,
     }
     let mut ballots = store.load(subject);
-    cast(&mut ballots, approval);
-    store.save(subject, &ballots);
-    Ok(tally(policy, &ballots))
+    if !cast(&mut ballots, approval) {
+        return Err(Error::Superseded);
+    }
+    let t = tally(policy, &ballots);
+    store.save(subject, ballots);
+    Ok(t)
 }
 
 #[cfg(feature = "ed25519")]
-fn verify(subject: &Subject, approval: &Approval) -> Result<(), Error> {
-    crate::ed25519::verify(subject, approval)
-}
+use crate::ed25519::verify;
 
 #[cfg(not(feature = "ed25519"))]
 fn verify(_subject: &Subject, _approval: &Approval) -> Result<(), Error> {

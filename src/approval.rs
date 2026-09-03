@@ -16,7 +16,9 @@ impl Approver {
         &self.0
     }
 
-    /// The approver as a principal, when it is one.
+    /// The approver as a principal, when it can be one. Any blob of at
+    /// most 29 bytes is a principal by the IC's definition, so this is
+    /// `Some` for short opaque ids too; a 32-byte signing key never is.
     #[cfg(feature = "candid")]
     pub fn principal(&self) -> Option<candid::Principal> {
         candid::Principal::try_from_slice(&self.0).ok()

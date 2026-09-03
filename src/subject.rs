@@ -30,8 +30,8 @@ impl Subject {
     }
 
     /// A subject for a hash that is shorter than 32 bytes (a git SHA-1
-    /// commit, say): the hash is sha256(kind || raw), so distinct inputs of
-    /// any length stay distinct.
+    /// commit, say): the hash is sha256(kind || 0 || raw), so distinct
+    /// inputs of any length stay distinct.
     pub fn of_short_hash(kind: impl Into<String>, raw: &[u8]) -> Self {
         let kind = kind.into();
         let mut h = Sha256::new();
