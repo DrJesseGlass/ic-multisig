@@ -1,0 +1,24 @@
+[package]
+name = "ic-multisig"
+version = "0.1.0"
+edition = "2021"
+description = "K-of-N approvals over a hashed subject: policy, ballots, tally, optional signatures. For Internet Computer canisters and the clients that verify them."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/DrJesseGlass/ic-multisig"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+sha2 = { version = "0.10", default-features = false }
+hex = { version = "0.4", default-features = false, features = ["alloc"] }
+candid = { version = "0.10", optional = true }
+ed25519-dalek = { version = "2", default-features = false, optional = true }
+
+[features]
+default = []
+# Derive CandidType on the public types and convert from candid::Principal.
+candid = ["dep:candid"]
+# Verify and (for tests and clients) produce Ed25519-signed approvals.
+ed25519 = ["dep:ed25519-dalek"]
+
+[dev-dependencies]
+serde_json = "1"
