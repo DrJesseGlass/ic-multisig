@@ -1,4 +1,4 @@
-use ic_multisig::{cast, record, tally, Approval, Approver, Decision, Error, MemoryStore, Policy, Subject};
+use ic_multisig::{cast, record, tally, Approval, Approver, Decision, Error, MemoryStore, Policy, Store, Subject};
 
 fn who(n: u8) -> Approver {
     Approver::from_bytes(vec![n; 8])
@@ -32,7 +32,7 @@ fn counts_only_current_approvers_once_each() {
     let t = record(&mut store, &policy, &subject, approve(1, 11)).unwrap();
     assert_eq!((t.approvals, t.reached), (2, true));
 
-    // Changing a ballot replaces it; later ballots win regardless of order.
+    // Changing a ballot replaces it.
     let t = record(&mut store, &policy, &subject, reject(1, 12)).unwrap();
     assert_eq!((t.approvals, t.rejections, t.reached), (1, 1, false));
     let t = record(&mut store, &policy, &subject, approve(3, 13)).unwrap();
@@ -40,8 +40,42 @@ fn counts_only_current_approvers_once_each() {
 
     // A removed approver's ballot stops counting but is reported as ignored.
     let narrower = Policy::new([who(1), who(2)], 2);
-    let t = tally(&narrower, &store.load_for_test(&subject));
+    let t = tally(&narrower, &store.load(&subject));
     assert_eq!((t.approvals, t.ignored, t.reached), (1, 1, false));
+}
+
+#[test]
+fn a_stale_ballot_cannot_undo_a_newer_one() {
+    // A signed ballot is a bearer record: anyone who saw the approval at
+    // t=100 could resubmit it after the reject at t=200. It must not count.
+    let policy = Policy::new([who(1)], 1);
+    let subject = Subject::of_bytes("module", b"wasm");
+    let mut store = MemoryStore::default();
+    assert!(record(&mut store, &policy, &subject, approve(1, 100)).unwrap().reached);
+    assert!(!record(&mut store, &policy, &subject, reject(1, 200)).unwrap().reached);
+    assert_eq!(
+        record(&mut store, &policy, &subject, approve(1, 100)).unwrap_err(),
+        Error::Superseded
+    );
+    assert_eq!(store.load(&subject), vec![reject(1, 200)]);
+    // Same time: the resubmission replaces, so replaying a ballot is idempotent.
+    assert!(record(&mut store, &policy, &subject, approve(1, 200)).unwrap().reached);
+}
+
+#[test]
+fn cast_and_tally_agree_on_latest() {
+    // Whatever order ballots arrive in, the list `cast` maintains and a
+    // raw list handed to `tally` (an off-chain verifier's) pick the same
+    // ballot: highest at_ns, ties to the later arrival.
+    let policy = Policy::new([who(1)], 1);
+    let raw = vec![approve(1, 5000), reject(1, 100), reject(1, 5000)];
+    let mut list = vec![];
+    for b in raw.iter().cloned() {
+        cast(&mut list, b);
+    }
+    assert_eq!(list, vec![reject(1, 5000)]);
+    assert_eq!(tally(&policy, &raw), tally(&policy, &list));
+    assert!(!tally(&policy, &raw).reached);
 }
 
 #[test]
@@ -90,16 +124,8 @@ fn records_round_trip_as_readable_json() {
     let sj = serde_json::to_string(&subject).unwrap();
     assert_eq!(serde_json::from_str::<Subject>(&sj).unwrap(), subject);
     let mut list = vec![];
-    cast(&mut list, approve(1, 1));
-    cast(&mut list, approve(1, 2));
-    assert_eq!(list.len(), 1);
-}
-
-trait LoadForTest {
-    fn load_for_test(&self, s: &Subject) -> Vec<Approval>;
-}
-impl LoadForTest for MemoryStore {
-    fn load_for_test(&self, s: &Subject) -> Vec<Approval> {
-        ic_multisig::Store::load(self, s)
-    }
+    assert!(cast(&mut list, approve(1, 1)));
+    assert!(cast(&mut list, approve(1, 2)));
+    assert!(!cast(&mut list, approve(1, 1)));
+    assert_eq!(list, vec![approve(1, 2)]);
 }

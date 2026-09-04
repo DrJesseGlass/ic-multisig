@@ -42,3 +42,24 @@ fn signed_approvals_verify_and_tampering_fails() {
     let t = record(&mut store, &policy, &subject, ed25519::sign(&subject, &k2, Decision::Approve, 101)).unwrap();
     assert!(t.reached);
 }
+
+#[test]
+fn weak_keys_are_refused() {
+    // The identity point as an approver key, with R = identity and S = 0,
+    // satisfies non-strict Ed25519 verification for every message: anyone
+    // could vote as that approver on any subject. Strict verification
+    // refuses it.
+    let mut identity = [0u8; 32];
+    identity[0] = 1;
+    let mut sig = vec![0u8; 64];
+    sig[..32].copy_from_slice(&identity);
+    let policy = Policy::signed([Approver::from_bytes(identity)], 1);
+    let subject = Subject::of_bytes("module", b"wasm bytes");
+    let mut forged = ic_multisig::Approval::new(Approver::from_bytes(identity), Decision::Approve, 1);
+    forged.signature = Some(sig);
+    assert_eq!(ed25519::verify(&subject, &forged).unwrap_err(), Error::InvalidSignature);
+    assert_eq!(
+        record(&mut MemoryStore::default(), &policy, &subject, forged).unwrap_err(),
+        Error::InvalidSignature
+    );
+}
