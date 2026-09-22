@@ -76,7 +76,7 @@
 // feature on and would otherwise present them as unconditional. Inert
 // anywhere else: nothing sets this cfg but the docs.rs invocation in
 // Cargo.toml, so stable builds never see the unstable attribute.
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod approval;
 mod ballots;
