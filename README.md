@@ -23,13 +23,25 @@ through the `Store` trait, so every rule is testable on the host.
 ```rust
 use ic_multisig::{record, Approval, Approver, Decision, MemoryStore, Policy, Subject};
 
-let policy = Policy::new([Approver::from_bytes(b"alice"), Approver::from_bytes(b"bob")], 2);
-let subject = Subject::of_short_hash("commit", &commit_sha1_bytes);
-let mut store = MemoryStore::default();   // a canister: a Store over a stable map
+let alice = Approver::from_bytes(b"alice");   // a canister: ic_cdk::caller()
+let bob = Approver::from_bytes(b"bob");
+let policy = Policy::new([alice.clone(), bob.clone()], 2);
+
+// A git commit is a 20-byte SHA-1, so it is widened rather than used raw.
+let subject = Subject::of_short_hash("commit", &[0xab; 20]);
+let mut store = MemoryStore::default();      // a canister: a Store over a stable map
+
 let tally = record(&mut store, &policy, &subject,
-    Approval::new(Approver::from_bytes(b"alice"), Decision::Approve, now_ns))?;
+    Approval::new(alice, Decision::Approve, 1_000))?;
+assert!(!tally.reached);
+
+let tally = record(&mut store, &policy, &subject,
+    Approval::new(bob, Decision::Approve, 2_000))?;
 if tally.reached { /* deploy */ }
 ```
+
+The same example runs as a doctest on the crate root, so what is written
+here is what compiles.
 
 ## Features
 
