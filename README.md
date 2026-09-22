@@ -15,10 +15,20 @@ Two flavors share one record type:
   of an update call. No signature; the identity is the principal's bytes.
 - **Signed approvals**: when an approval must be checkable outside the
   canister, or on another chain, it carries an Ed25519 signature over the
-  subject, the decision, and the time (`ed25519` feature). `record` verifies
-  them; a verifier that assembles its own ballot list instead must call
-  `ed25519::verify` on each record first, because `cast` and `tally` check
-  policy membership and ordering, not signatures.
+  subject, the decision, and the time (`ed25519` feature).
+
+Which one a record relies on is not visible in the record, so counting
+goes through `Ballots`. `Ballots::verified` checks the signatures and sets
+the failures aside; `Ballots::assume_checked` is how a caller states that
+the IC authenticated the approvers, or that `record` already checked what
+it stored. `tally` verifies and counts in one call -- the one an
+off-chain verifier wants -- and `record` verifies once per ballot on the
+way in, so a canister never re-verifies its own store.
+
+A refused record is dropped before the latest-ballot rule, never after.
+Otherwise a record naming an honest approver, dated far in the future,
+would supersede their real ballot without having to be a valid vote at
+all, and suppressing an approval is as good as reversing it at K of N.
 
 No dependency on `ic-cdk`: callers pass the approver in and supply storage
 through the `Store` trait, so every rule is testable on the host.

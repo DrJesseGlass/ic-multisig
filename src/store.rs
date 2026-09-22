@@ -1,12 +1,23 @@
 use crate::approval::Approval;
+use crate::ballots::{verify, Ballots};
 use crate::policy::Policy;
 use crate::subject::Subject;
-use crate::tally::{cast, tally, Tally};
+use crate::tally::{cast, tally_checked, Tally};
 use crate::Error;
 use std::collections::BTreeMap;
 
 /// Where ballots live. A canister implements this over a stable map keyed
 /// by [`Subject::key`]; tests use [`MemoryStore`].
+///
+/// # Contract
+///
+/// A store holds only what [`record`] put there. `record` checks each
+/// ballot on the way in and then counts what comes back out without
+/// checking it again, so an implementation that admits records by any
+/// other route -- a migration, a test fixture, a second writer -- is
+/// handing the count things nothing verified. Where that is unavoidable,
+/// count with [`Ballots::verified`](crate::Ballots::verified) instead of
+/// relying on `record`'s return value.
 pub trait Store {
     /// Every ballot recorded against `subject`, in any order. An unknown
     /// subject has none, which is an empty vector, not an error.
@@ -82,15 +93,11 @@ pub fn record(
     if !cast(&mut ballots, approval) {
         return Err(Error::Superseded);
     }
-    let t = tally(policy, &ballots);
-    store.save(subject, ballots);
+    // Each ballot was verified above before it was ever stored, so the
+    // count does not verify them again: that would be a signature check
+    // per stored ballot on every update call, for an answer already known.
+    let ballots = Ballots::assume_checked(ballots);
+    let t = tally_checked(policy, &ballots);
+    store.save(subject, ballots.into_vec());
     Ok(t)
-}
-
-#[cfg(feature = "ed25519")]
-use crate::ed25519::verify;
-
-#[cfg(not(feature = "ed25519"))]
-fn verify(_subject: &Subject, _approval: &Approval) -> Result<(), Error> {
-    Err(Error::SignaturesUnsupported)
 }
