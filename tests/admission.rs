@@ -36,12 +36,15 @@ fn an_unsigned_record_cannot_suppress_a_real_one() {
 
     // Pretend alice's real ballot has already been checked, and hand the
     // count a forged reject dated at the end of time alongside it.
-    let ballots = Ballots::assume_checked([
-        signed_looking(alice.clone(), Decision::Approve, 1_000),
-        Approval::new(alice, Decision::Reject, u64::MAX),
-    ]);
+    let ballots = Ballots::assume_checked(
+        &subject(),
+        [
+            signed_looking(alice.clone(), Decision::Approve, 1_000),
+            Approval::new(alice, Decision::Reject, u64::MAX),
+        ],
+    );
 
-    let t = tally_checked(&policy, &ballots);
+    let t = tally_checked(&policy, &subject(), &ballots);
     assert_eq!((t.approvals, t.rejections, t.invalid), (1, 0, 1));
     assert!(t.reached, "the forged reject must not bury the real approval");
 }
@@ -56,15 +59,53 @@ fn signed_looking(approver: Approver, decision: Decision, at_ns: u64) -> Approva
 }
 
 #[test]
+fn tally_counts_nothing_that_is_not_signed_whatever_the_policy_says() {
+    // The policy's require_signature rule is not what protects `tally`.
+    // Under Policy::new, an unsigned record breaks no policy rule -- and
+    // it still cannot be counted here, because a record that reached this
+    // function unsigned has nothing behind it but its author's say-so.
+    // Otherwise the suppression attack would land under exactly the policy
+    // shape that looks most innocent: the forged reject dated at the end
+    // of time would become alice's latest ballot and bury her approval.
+    let alice = Approver::from_bytes(b"alice");
+    let policy = Policy::new([alice.clone()], 1);
+    let ballots = vec![
+        Approval::new(alice.clone(), Decision::Approve, 1_000),
+        Approval::new(alice, Decision::Reject, u64::MAX),
+    ];
+
+    let t = tally(&policy, &subject(), &ballots);
+    assert_eq!((t.approvals, t.rejections, t.invalid), (0, 0, 2));
+    assert!(!t.reached);
+}
+
+#[test]
+fn ballots_cannot_be_counted_against_another_subject() {
+    // A signature is evidence about one subject. Carrying a checked list
+    // to the count of a different one asks a question the evidence does
+    // not answer, so it is refused rather than answered wrongly.
+    let alice = Approver::from_bytes(b"alice");
+    let policy = Policy::new([alice.clone()], 1);
+    let here = subject();
+    let elsewhere = Subject::of_bytes("module", b"a different wasm");
+
+    let ballots = Ballots::assume_checked(&here, [Approval::new(alice, Decision::Approve, 1)]);
+    assert!(tally_checked(&policy, &here, &ballots).reached);
+
+    let t = tally_checked(&policy, &elsewhere, &ballots);
+    assert_eq!((t.approvals, t.invalid, t.reached), (0, 1, false));
+}
+
+#[test]
 fn assume_checked_keeps_what_it_is_given() {
     // The escape hatch does what it says: no verification, nothing rejected.
     // It is sound only where the caller's assertion is true, which is why it
     // is spelled the way it is.
     let alice = Approver::from_bytes(b"alice");
     let policy = Policy::new([alice.clone()], 1);
-    let ballots = Ballots::assume_checked([Approval::new(alice, Decision::Approve, 1)]);
+    let ballots = Ballots::assume_checked(&subject(), [Approval::new(alice, Decision::Approve, 1)]);
     assert_eq!(ballots.rejected().len(), 0);
-    assert!(tally_checked(&policy, &ballots).reached);
+    assert!(tally_checked(&policy, &subject(), &ballots).reached);
 }
 
 #[cfg(not(feature = "ed25519"))]
@@ -81,7 +122,7 @@ fn without_the_feature_a_signed_record_is_refused_not_trusted() {
     let ballots = Ballots::verified(&subject(), [record]);
     assert_eq!(ballots.rejected().len(), 1);
     assert!(ballots.is_empty());
-    assert!(!tally_checked(&policy, &ballots).reached);
+    assert!(!tally_checked(&policy, &subject(), &ballots).reached);
 }
 
 #[cfg(feature = "ed25519")]
@@ -105,7 +146,7 @@ mod signed {
         assert!(ballots.is_empty());
         assert_eq!(ballots.rejected(), &[tampered]);
 
-        let t = tally_checked(&policy, &ballots);
+        let t = tally_checked(&policy, &subject(), &ballots);
         assert_eq!((t.approvals, t.invalid, t.reached), (0, 1, false));
     }
 
@@ -150,7 +191,8 @@ mod signed {
         for k in [&k1, &k2] {
             record(&mut store, &policy, &subject, ed25519::sign(&subject, k, Decision::Approve, 10)).unwrap();
         }
-        let canister = tally_checked(&policy, &Ballots::assume_checked(store.load(&subject)));
+        let canister =
+            tally_checked(&policy, &subject, &Ballots::assume_checked(&subject, store.load(&subject)));
 
         // The verifier holds the same records plus a forgery it collected
         // from somewhere less careful.

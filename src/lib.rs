@@ -19,11 +19,15 @@
 //!   produce) them.
 //!
 //! Which of the two a record relies on is not visible in the record, so
-//! counting goes through [`Ballots`]: [`Ballots::verified`] checks the
-//! signatures, [`Ballots::assume_checked`] is how a caller states that the
-//! IC already did the work. [`tally`] does the first for you and is what
-//! an off-chain verifier wants; [`record`] does it once per ballot at
-//! write time, so a canister never re-verifies its own store.
+//! counting goes through [`Ballots`], whose constructors are the two
+//! claims: [`Ballots::verified`] checks the signatures, and
+//! [`Ballots::assume_checked`] is how a caller states that the IC already
+//! did the work. [`tally`] verifies and counts in one call, and counts
+//! nothing it could not verify -- the call for records of unknown
+//! provenance. [`tally_checked`] counts what the caller vouched for, which
+//! is the only way to count authenticated ballots, since those carry no
+//! signature to check. [`record`] verifies once per ballot at write time,
+//! so a canister never re-verifies its own store.
 //!
 //! The crate has no dependency on `ic-cdk`: callers pass the approver in and
 //! supply storage through [`Store`], so every rule here is testable on the

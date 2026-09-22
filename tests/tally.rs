@@ -1,4 +1,7 @@
-use ic_multisig::{cast, record, tally, Approval, Approver, Decision, Error, MemoryStore, Policy, Store, Subject};
+use ic_multisig::{
+    cast, record, tally, tally_checked, Approval, Approver, Ballots, Decision, Error, MemoryStore,
+    Policy, Store, Subject,
+};
 
 fn who(n: u8) -> Approver {
     Approver::from_bytes(vec![n; 8])
@@ -39,8 +42,11 @@ fn counts_only_current_approvers_once_each() {
     assert!(t.reached);
 
     // A removed approver's ballot stops counting but is reported as ignored.
+    // These came out of the store record wrote, so they are counted on the
+    // checked path; `tally` is for records of unknown provenance.
     let narrower = Policy::new([who(1), who(2)], 2);
-    let t = tally(&narrower, &subject, &store.load(&subject));
+    let stored = Ballots::assume_checked(&subject, store.load(&subject));
+    let t = tally_checked(&narrower, &subject, &stored);
     assert_eq!((t.approvals, t.ignored, t.reached), (1, 1, false));
 }
 
@@ -64,9 +70,10 @@ fn a_stale_ballot_cannot_undo_a_newer_one() {
 
 #[test]
 fn cast_and_tally_agree_on_latest() {
-    // Whatever order ballots arrive in, the list `cast` maintains and a
-    // raw list handed to `tally` (an off-chain verifier's) pick the same
-    // ballot: highest at_ns, ties to the later arrival.
+    // Whatever order ballots arrive in, the list `cast` maintains and the
+    // unreduced list pick the same ballot: highest at_ns, ties to the
+    // later arrival. So a caller may cast as it goes or count the lot at
+    // the end and get the same answer.
     let policy = Policy::new([who(1)], 1);
     let subject = Subject::of_bytes("module", b"wasm");
     let raw = vec![approve(1, 5000), reject(1, 100), reject(1, 5000)];
@@ -75,8 +82,9 @@ fn cast_and_tally_agree_on_latest() {
         cast(&mut list, b);
     }
     assert_eq!(list, vec![reject(1, 5000)]);
-    assert_eq!(tally(&policy, &subject, &raw), tally(&policy, &subject, &list));
-    assert!(!tally(&policy, &subject, &raw).reached);
+    let count = |v: Vec<Approval>| tally_checked(&policy, &subject, &Ballots::assume_checked(&subject, v));
+    assert_eq!(count(raw.clone()), count(list));
+    assert!(!count(raw).reached);
 }
 
 #[test]

@@ -1,50 +1,56 @@
 use crate::approval::Approval;
 use crate::subject::Subject;
 
-/// A ballot list that has already been accounted for, so that counting it
-/// is not counting a forgery.
+/// Ballots that may be counted, and the subject they are about.
 ///
 /// An [`Approval`] is an inert record: `approver` is whatever bytes its
-/// author put there. What makes it evidence is one of two things having
-/// happened -- the IC authenticated the caller who submitted it, or its
-/// signature verified against the approver's key. Neither is visible in
-/// the record itself, so [`tally_checked`](crate::tally_checked) asks for
-/// this type instead of a raw slice: to count ballots you must first say,
-/// by choosing a constructor, which of the two you are relying on.
+/// author put there. What makes one evidence is something that happened
+/// outside the record -- the IC authenticated the caller who submitted it,
+/// or its signature verified against the approver's key -- and neither
+/// fact is visible in the record itself. So counting goes through this
+/// type rather than a raw slice: to count ballots you must first say, by
+/// choosing a constructor, which of the two you are relying on.
+///
+/// The subject is part of the value because a signature is only ever
+/// evidence about one subject. Carrying a `Ballots` verified against one
+/// module hash to the count of another would otherwise be a bookkeeping
+/// slip that nothing catches; [`tally_checked`](crate::tally_checked)
+/// catches it.
 ///
 /// [`tally`](crate::tally) is the shorthand that verifies and counts in
 /// one step, and [`record`](crate::record) builds one internally.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Ballots {
+    subject: Subject,
     kept: Vec<Approval>,
     rejected: Vec<Approval>,
 }
 
 impl Ballots {
-    /// Check every signature against `subject`, keeping the records that
-    /// pass and setting the failures aside in [`Ballots::rejected`].
+    /// Keep the records that carry a signature valid for `subject`, and
+    /// set every other record aside in [`Ballots::rejected`].
     ///
-    /// This is the constructor for records that arrived over an untrusted
-    /// path: a verifier collecting signed attestations on a module hash, a
-    /// browser counting them against a keyset it trusts.
+    /// This is the constructor for records that arrived over a path you do
+    /// not control: a verifier collecting signed attestations on a module
+    /// hash, a browser counting them against a keyset it trusts.
     ///
-    /// A record carrying *no* signature is kept, not rejected, because a
-    /// missing signature is not a forged one -- whether an unsigned record
-    /// may count is [`Policy::require_signature`](crate::Policy), and the
-    /// counting step applies it. A verifier holding untrusted records
-    /// therefore wants a [`Policy::signed`](crate::Policy::signed) policy:
-    /// this constructor throws out invalid signatures, and that policy
-    /// throws out absent ones.
+    /// A record with no signature is rejected too. It may be perfectly
+    /// honest -- an approval the IC authenticated inside a canister needs
+    /// no signature -- but nothing here can tell that from a record an
+    /// attacker typed, and this constructor's whole job is to answer that
+    /// question by checking. An unsigned record whose authenticity you
+    /// know by other means belongs in [`Ballots::assume_checked`], where
+    /// the knowing is explicit.
     ///
     /// Fail-closed in a build without the `ed25519` feature: no signature
-    /// can be checked, so every signed record is rejected rather than
-    /// taken on trust.
+    /// can be checked, so every record is rejected rather than taken on
+    /// trust.
     pub fn verified(subject: &Subject, records: impl IntoIterator<Item = Approval>) -> Self {
-        let mut b = Ballots::default();
+        let mut b = Ballots::empty(subject);
         for r in records {
             match r.signature {
-                Some(_) if verify(subject, &r).is_err() => b.rejected.push(r),
-                _ => b.kept.push(r),
+                Some(_) if verify(subject, &r).is_ok() => b.kept.push(r),
+                _ => b.rejected.push(r),
             }
         }
         b
@@ -61,11 +67,26 @@ impl Ballots {
     /// Anything else -- in particular records that crossed a network or
     /// were read from a file -- wants [`Ballots::verified`]. The name is
     /// the warning: this asserts a fact the type cannot check.
-    pub fn assume_checked(records: impl IntoIterator<Item = Approval>) -> Self {
+    pub fn assume_checked(subject: &Subject, records: impl IntoIterator<Item = Approval>) -> Self {
         Ballots {
             kept: records.into_iter().collect(),
+            ..Ballots::empty(subject)
+        }
+    }
+
+    fn empty(subject: &Subject) -> Self {
+        Ballots {
+            subject: subject.clone(),
+            kept: Vec::new(),
             rejected: Vec::new(),
         }
+    }
+
+    /// What these ballots are about. Set by the constructor, and what
+    /// [`tally_checked`](crate::tally_checked) checks its own argument
+    /// against.
+    pub fn subject(&self) -> &Subject {
+        &self.subject
     }
 
     /// The records that will be counted.

@@ -96,8 +96,8 @@ pub fn record(
     // Each ballot was verified above before it was ever stored, so the
     // count does not verify them again: that would be a signature check
     // per stored ballot on every update call, for an answer already known.
-    let ballots = Ballots::assume_checked(ballots);
-    let t = tally_checked(policy, &ballots);
+    let ballots = Ballots::assume_checked(subject, ballots);
+    let t = tally_checked(policy, subject, &ballots);
     store.save(subject, ballots.into_vec());
     Ok(t)
 }
