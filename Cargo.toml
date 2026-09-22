@@ -5,6 +5,14 @@ edition = "2021"
 description = "K-of-N approvals over a hashed subject: policy, ballots, tally, optional signatures. For Internet Computer canisters and the clients that verify them."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/DrJesseGlass/ic-multisig"
+readme = "README.md"
+keywords = ["multisig", "threshold", "approvals", "ed25519", "icp"]
+categories = ["cryptography", "authentication", "wasm"]
+
+# docs.rs builds with no features by default, which would hide the ed25519
+# module and the CandidType impls -- the two things a reader comes to check.
+[package.metadata.docs.rs]
+all-features = true
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

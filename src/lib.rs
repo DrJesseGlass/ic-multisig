@@ -26,6 +26,41 @@
 //! Consumers: ic-git (voters gating the deploy queue), ic-vote (trustees
 //! gating election lifecycle steps), and the attestation tooling both rely
 //! on (K-of-N verifiers on a module hash).
+//!
+//! # Example
+//!
+//! Two of two voters approving a commit, inside a canister that would pass
+//! `ic_cdk::caller()` as the approver and `ic_cdk::api::time()` as the time:
+//!
+//! ```
+//! use ic_multisig::{record, Approval, Approver, Decision, MemoryStore, Policy, Subject};
+//!
+//! fn main() -> Result<(), ic_multisig::Error> {
+//!     let alice = Approver::from_bytes(b"alice");   // a canister: ic_cdk::caller()
+//!     let bob = Approver::from_bytes(b"bob");
+//!     let policy = Policy::new([alice.clone(), bob.clone()], 2);
+//!
+//!     // A git commit is a 20-byte SHA-1, so it is widened rather than used raw.
+//!     let subject = Subject::of_short_hash("commit", &[0xab; 20]);
+//!     let mut store = MemoryStore::default();      // a canister: a Store over a stable map
+//!
+//!     let tally = record(&mut store, &policy, &subject,
+//!         Approval::new(alice, Decision::Approve, 1_000))?;
+//!     assert!(!tally.reached);
+//!
+//!     let tally = record(&mut store, &policy, &subject,
+//!         Approval::new(bob, Decision::Approve, 2_000))?;
+//!     if tally.reached { /* deploy */ }
+//!     Ok(())
+//! }
+//! ```
+//!
+//! For approvals that must be checkable outside the canister, see the
+//! `ed25519` module (feature `ed25519`).
+
+// Every public item carries its own documentation: the crate is read as
+// much from docs.rs as from here.
+#![deny(missing_docs)]
 
 mod approval;
 mod policy;

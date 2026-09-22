@@ -15,7 +15,10 @@ Two flavors share one record type:
   of an update call. No signature; the identity is the principal's bytes.
 - **Signed approvals**: when an approval must be checkable outside the
   canister, or on another chain, it carries an Ed25519 signature over the
-  subject, the decision, and the time (`ed25519` feature).
+  subject, the decision, and the time (`ed25519` feature). `record` verifies
+  them; a verifier that assembles its own ballot list instead must call
+  `ed25519::verify` on each record first, because `cast` and `tally` check
+  policy membership and ordering, not signatures.
 
 No dependency on `ic-cdk`: callers pass the approver in and supply storage
 through the `Store` trait, so every rule is testable on the host.
@@ -23,13 +26,29 @@ through the `Store` trait, so every rule is testable on the host.
 ```rust
 use ic_multisig::{record, Approval, Approver, Decision, MemoryStore, Policy, Subject};
 
-let policy = Policy::new([Approver::from_bytes(b"alice"), Approver::from_bytes(b"bob")], 2);
-let subject = Subject::of_short_hash("commit", &commit_sha1_bytes);
-let mut store = MemoryStore::default();   // a canister: a Store over a stable map
-let tally = record(&mut store, &policy, &subject,
-    Approval::new(Approver::from_bytes(b"alice"), Decision::Approve, now_ns))?;
-if tally.reached { /* deploy */ }
+fn main() -> Result<(), ic_multisig::Error> {
+    let alice = Approver::from_bytes(b"alice");   // a canister: ic_cdk::caller()
+    let bob = Approver::from_bytes(b"bob");
+    let policy = Policy::new([alice.clone(), bob.clone()], 2);
+
+    // A git commit is a 20-byte SHA-1, so it is widened rather than used raw.
+    let subject = Subject::of_short_hash("commit", &[0xab; 20]);
+    let mut store = MemoryStore::default();      // a canister: a Store over a stable map
+
+    let tally = record(&mut store, &policy, &subject,
+        Approval::new(alice, Decision::Approve, 1_000))?;
+    assert!(!tally.reached);
+
+    let tally = record(&mut store, &policy, &subject,
+        Approval::new(bob, Decision::Approve, 2_000))?;
+    if tally.reached { /* deploy */ }
+    Ok(())
+}
 ```
+
+That block is the crate-root doctest byte for byte: `tests/readme.rs`
+asserts the two have not drifted, and the doctest run is what compiles
+them. Paste it into a `main.rs` and it builds as written.
 
 ## Features
 
@@ -59,3 +78,11 @@ The toolchain is pinned to match ic-git's reproducible build.
 - A client-side verifier (JavaScript) that counts signed approvals against
   a policy, for countersign and the ic-vote ballot client.
 - Expiry and revocation of approvals.
+
+## License
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT) at your option. Unless you explicitly state
+otherwise, any contribution intentionally submitted for inclusion in this
+crate by you, as defined in the Apache-2.0 license, shall be dual licensed
+as above, without any additional terms or conditions.
