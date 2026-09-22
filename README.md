@@ -83,6 +83,12 @@ them. Paste it into a `main.rs` and it builds as written.
 - `candid`: `CandidType` on the public types; `Approver: From<Principal>`.
 - `ed25519`: verify signed approvals; `ed25519::sign` for clients and tests.
 
+Take the key types from `ic_multisig::ed25519`, which re-exports
+`SigningKey`, `VerifyingKey` and `Signature`, rather than adding
+`ed25519-dalek` to your own manifest. This crate tracks `ed25519-dalek` 2;
+`cargo add ed25519-dalek` now resolves 3, and two major versions in one
+graph produce a `SigningKey` that `sign` will not accept.
+
 ## Consumers
 
 - ic-git: voters named on a repo approve a commit before the deploy queue
