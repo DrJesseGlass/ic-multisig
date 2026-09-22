@@ -8,8 +8,8 @@
 //! trusting the canister that stored it.
 //!
 //! ```
-//! use ed25519_dalek::SigningKey;
-//! use ic_multisig::{ed25519, record, Approver, Decision, MemoryStore, Policy, Subject};
+//! use ic_multisig::ed25519::{self, SigningKey};
+//! use ic_multisig::{record, Approver, Decision, MemoryStore, Policy, Subject};
 //!
 //! let key = SigningKey::from_bytes(&[1u8; 32]);
 //! let policy = Policy::signed([Approver::from_bytes(key.verifying_key().to_bytes())], 1);
@@ -30,7 +30,23 @@
 use crate::approval::{Approval, Approver, Decision};
 use crate::subject::Subject;
 use crate::Error;
-use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
+use ed25519_dalek::Signer;
+
+/// The `ed25519-dalek` types this module's signatures are written in.
+///
+/// They are re-exported because [`sign`] takes a `SigningKey` and there is
+/// no way to build one without naming the type. A caller who adds
+/// `ed25519-dalek` to their own manifest to get it can easily end up with
+/// a different major version than this crate resolved, and then their
+/// `SigningKey` is a different type from the one `sign` wants -- a
+/// mismatch rustc reports as `expected SigningKey, found SigningKey`,
+/// which is not the most helpful sentence it has ever produced. Take the
+/// types from here and the question cannot come up.
+///
+/// This crate tracks `ed25519-dalek` 2. If you need version 3 in the same
+/// binary, both can coexist; only the keys crossing this module's API have
+/// to come from here.
+pub use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 
 /// Produce a signed approval. For clients, tests, and off-chain attesters.
 ///

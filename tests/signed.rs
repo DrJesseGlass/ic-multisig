@@ -44,6 +44,21 @@ fn signed_approvals_verify_and_tampering_fails() {
 }
 
 #[test]
+fn the_key_type_callers_reach_for_is_the_one_sign_wants() {
+    // The re-export exists so a caller never adds ed25519-dalek to their
+    // own manifest, resolves a different major version, and is told that
+    // SigningKey is not SigningKey. The annotation is the test: this only
+    // compiles while the re-exported type is the very one `sign` takes.
+    let k: ic_multisig::ed25519::SigningKey = SigningKey::from_bytes(&[3u8; 32]);
+    let subject = Subject::of_bytes("module", b"wasm bytes");
+    let policy = Policy::signed([Approver::from_bytes(k.verifying_key().to_bytes())], 1);
+
+    let a = ed25519::sign(&subject, &k, Decision::Approve, 1);
+    assert!(ed25519::verify(&subject, &a).is_ok());
+    assert!(record(&mut MemoryStore::default(), &policy, &subject, a).unwrap().reached);
+}
+
+#[test]
 fn weak_keys_are_refused() {
     // The identity point as an approver key, with R = identity and S = 0,
     // satisfies non-strict Ed25519 verification for every message: anyone

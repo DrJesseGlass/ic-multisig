@@ -72,6 +72,11 @@
 // Every public item carries its own documentation: the crate is read as
 // much from docs.rs as from here.
 #![deny(missing_docs)]
+// Label the feature-gated items on docs.rs, which builds with every
+// feature on and would otherwise present them as unconditional. Inert
+// anywhere else: nothing sets this cfg but the docs.rs invocation in
+// Cargo.toml, so stable builds never see the unstable attribute.
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod approval;
 mod ballots;

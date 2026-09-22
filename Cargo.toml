@@ -1,6 +1,6 @@
 [package]
 name = "ic-multisig"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "K-of-N approvals over a hashed subject: policy, ballots, tally, optional signatures. For Internet Computer canisters and the clients that verify them."
 license = "MIT OR Apache-2.0"
@@ -11,8 +11,11 @@ categories = ["cryptography", "authentication", "wasm"]
 
 # docs.rs builds with no features by default, which would hide the ed25519
 # module and the CandidType impls -- the two things a reader comes to check.
+# Building everything then hides the opposite fact, that they are optional
+# at all, so the docsrs cfg turns the feature labels back on.
 [package.metadata.docs.rs]
 all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
