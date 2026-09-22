@@ -18,6 +18,17 @@
 //!   Enable the `ed25519` feature to verify (and, for tests and clients, to
 //!   produce) them.
 //!
+//! Which of the two a record relies on is not visible in the record, so
+//! counting goes through [`Ballots`], whose constructors are the two
+//! claims: [`Ballots::verified`] checks the signatures, and
+//! [`Ballots::assume_checked`] is how a caller states that the IC already
+//! did the work. [`tally`] verifies and counts in one call, and counts
+//! nothing it could not verify -- the call for records of unknown
+//! provenance. [`tally_checked`] counts what the caller vouched for, which
+//! is the only way to count authenticated ballots, since those carry no
+//! signature to check. [`record`] verifies once per ballot at write time,
+//! so a canister never re-verifies its own store.
+//!
 //! The crate has no dependency on `ic-cdk`: callers pass the approver in and
 //! supply storage through [`Store`], so every rule here is testable on the
 //! host. Under the `candid` feature the public types derive `CandidType` and
@@ -63,6 +74,7 @@
 #![deny(missing_docs)]
 
 mod approval;
+mod ballots;
 mod policy;
 mod store;
 mod subject;
@@ -72,10 +84,11 @@ mod tally;
 pub mod ed25519;
 
 pub use approval::{Approval, Approver, Decision};
+pub use ballots::Ballots;
 pub use policy::Policy;
 pub use store::{record, MemoryStore, Store};
 pub use subject::Subject;
-pub use tally::{cast, tally, Tally};
+pub use tally::{cast, tally, tally_checked, Tally};
 
 /// Why an approval was refused.
 #[derive(Debug, Clone, PartialEq, Eq)]

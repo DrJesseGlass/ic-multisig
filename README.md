@@ -15,10 +15,38 @@ Two flavors share one record type:
   of an update call. No signature; the identity is the principal's bytes.
 - **Signed approvals**: when an approval must be checkable outside the
   canister, or on another chain, it carries an Ed25519 signature over the
-  subject, the decision, and the time (`ed25519` feature). `record` verifies
-  them; a verifier that assembles its own ballot list instead must call
-  `ed25519::verify` on each record first, because `cast` and `tally` check
-  policy membership and ordering, not signatures.
+  subject, the decision, and the time (`ed25519` feature).
+
+Which one a record relies on is not visible in the record, so counting
+goes through `Ballots`, and its two constructors are the two claims a
+caller can make. `Ballots::verified` keeps the records carrying a valid
+signature for the subject and sets every other one aside;
+`Ballots::assume_checked` takes them as they are, which is how a caller
+states that the IC authenticated the approvers or that `record` already
+checked what it stored.
+
+So there are two ways to count, and which one you may use is decided by
+where the records came from:
+
+- `tally(policy, subject, records)` verifies first and counts only what
+  verified. An unsigned record is refused here whatever the policy says,
+  because a record that arrives unsigned has nothing behind it but its
+  author's say-so. This is the call for anything collected from a network
+  or a file.
+- `tally_checked(policy, subject, ballots)` counts what the caller
+  vouched for. Authenticated ballots can only be counted this way -- they
+  carry no signature -- and `record` uses it so a canister does not
+  re-verify its own store on every call.
+
+A refused record is dropped before the latest-ballot rule, never after.
+Otherwise a record naming an honest approver, dated far in the future,
+would supersede their real ballot without having to be a valid vote at
+all, and suppressing an approval is as good as reversing it at K of N.
+
+A `Ballots` remembers the subject it was built against, and
+`tally_checked` checks that against the subject it was asked about: a
+signature is evidence about one subject, and a count that would answer a
+different question refuses to answer at all.
 
 No dependency on `ic-cdk`: callers pass the approver in and supply storage
 through the `Store` trait, so every rule is testable on the host.

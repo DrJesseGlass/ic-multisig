@@ -19,7 +19,7 @@ fn public_types_round_trip_through_candid() {
     ap.signature = Some(vec![9u8; 64]);
     round_trip(&ap);
     round_trip(&Policy::signed([a], 1));
-    round_trip(&Tally { approvals: 1, rejections: 0, ignored: 0, required: 1, reached: true });
+    round_trip(&Tally { approvals: 1, rejections: 0, ignored: 0, invalid: 0, required: 1, reached: true });
     // The principal conversion the docs promise.
     let p = candid::Principal::anonymous();
     assert_eq!(Approver::from(p).principal(), Some(p));
