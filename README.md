@@ -15,7 +15,10 @@ Two flavors share one record type:
   of an update call. No signature; the identity is the principal's bytes.
 - **Signed approvals**: when an approval must be checkable outside the
   canister, or on another chain, it carries an Ed25519 signature over the
-  subject, the decision, and the time (`ed25519` feature).
+  subject, the decision, and the time (`ed25519` feature). `record` verifies
+  them; a verifier that assembles its own ballot list instead must call
+  `ed25519::verify` on each record first, because `cast` and `tally` check
+  policy membership and ordering, not signatures.
 
 No dependency on `ic-cdk`: callers pass the approver in and supply storage
 through the `Store` trait, so every rule is testable on the host.
@@ -23,25 +26,29 @@ through the `Store` trait, so every rule is testable on the host.
 ```rust
 use ic_multisig::{record, Approval, Approver, Decision, MemoryStore, Policy, Subject};
 
-let alice = Approver::from_bytes(b"alice");   // a canister: ic_cdk::caller()
-let bob = Approver::from_bytes(b"bob");
-let policy = Policy::new([alice.clone(), bob.clone()], 2);
+fn main() -> Result<(), ic_multisig::Error> {
+    let alice = Approver::from_bytes(b"alice");   // a canister: ic_cdk::caller()
+    let bob = Approver::from_bytes(b"bob");
+    let policy = Policy::new([alice.clone(), bob.clone()], 2);
 
-// A git commit is a 20-byte SHA-1, so it is widened rather than used raw.
-let subject = Subject::of_short_hash("commit", &[0xab; 20]);
-let mut store = MemoryStore::default();      // a canister: a Store over a stable map
+    // A git commit is a 20-byte SHA-1, so it is widened rather than used raw.
+    let subject = Subject::of_short_hash("commit", &[0xab; 20]);
+    let mut store = MemoryStore::default();      // a canister: a Store over a stable map
 
-let tally = record(&mut store, &policy, &subject,
-    Approval::new(alice, Decision::Approve, 1_000))?;
-assert!(!tally.reached);
+    let tally = record(&mut store, &policy, &subject,
+        Approval::new(alice, Decision::Approve, 1_000))?;
+    assert!(!tally.reached);
 
-let tally = record(&mut store, &policy, &subject,
-    Approval::new(bob, Decision::Approve, 2_000))?;
-if tally.reached { /* deploy */ }
+    let tally = record(&mut store, &policy, &subject,
+        Approval::new(bob, Decision::Approve, 2_000))?;
+    if tally.reached { /* deploy */ }
+    Ok(())
+}
 ```
 
-The same example runs as a doctest on the crate root, so what is written
-here is what compiles.
+That block is the crate-root doctest byte for byte: `tests/readme.rs`
+asserts the two have not drifted, and the doctest run is what compiles
+them. Paste it into a `main.rs` and it builds as written.
 
 ## Features
 

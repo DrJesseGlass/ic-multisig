@@ -28,6 +28,9 @@ pub struct Tally {
 /// ignored rather than dropped silently, so an audit can see a removed
 /// approver's history.
 ///
+/// This counts what it is handed. Signatures are not verified here; see
+/// [`cast`] for what that means for a verifier holding untrusted records.
+///
 /// ```
 /// use ic_multisig::{tally, Approval, Approver, Decision, Policy};
 ///
@@ -77,9 +80,23 @@ pub fn tally(policy: &Policy, ballots: &[Approval]) -> Tally {
 /// signer's newer decision. Equal `at_ns` replaces, so resubmitting the
 /// same ballot is idempotent.
 ///
-/// [`record`](crate::record) calls this; reach for it directly only when
-/// assembling a ballot list outside a [`Store`](crate::Store), such as an
-/// off-chain verifier collecting signed approvals.
+/// [`record`](crate::record) calls this, and is what anything holding a
+/// [`Store`](crate::Store) should call: it checks policy membership, the
+/// policy's signature rule, and the signature itself first. Reach for
+/// `cast` directly only when assembling a ballot list outside a `Store` --
+/// an off-chain verifier collecting signed approvals -- and read the next
+/// paragraph before you do.
+///
+/// # Signatures are not checked here
+///
+/// `cast` applies only the supersede rule, and [`tally`] only asks whether
+/// a ballot's approver is named by the policy. Neither looks at a
+/// signature. Given untrusted records, a verifier that calls these two
+/// directly counts a forgery: anyone can build an `Approval` naming an
+/// authorized public key, leave `signature` empty or fill it with
+/// nonsense, and be counted. Call `ed25519::verify` on every record first
+/// and drop the ones that fail, or route them through `record` against a
+/// [`Policy::signed`](crate::Policy::signed) policy, which does it for you.
 ///
 /// ```
 /// use ic_multisig::{cast, Approval, Approver, Decision};
