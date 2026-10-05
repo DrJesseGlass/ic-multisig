@@ -91,6 +91,13 @@ approval to overcome, and it puts a reason in front of the other
 approvers. A rejection still weighs nothing: it says "no", or withdraws
 an earlier approval, without raising the bar for anyone else.
 
+That holds while the policy has the extra approval to give. An objector
+cannot also approve, so K of N absorbs one objection only when
+K + 1 <= N - 1. At K = N - 1 or K = N nobody is left to outweigh it, and
+a single objection holds the subject until its author casts another
+ballot or leaves the policy. Keep K at N - 2 or below where no one
+approver should be able to do that.
+
 ```rust
 use ic_multisig::{record, Approval, Approver, Decision, MemoryStore, Policy, Subject};
 

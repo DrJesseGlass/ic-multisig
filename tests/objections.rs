@@ -64,6 +64,11 @@ fn approvals_minus_objections_must_reach_k() {
         ((3, 2, 0, 1), false),
         // Objections alone decide nothing, and no count goes negative.
         ((3, 0, 4, 0), false),
+        // The objector cannot also approve. At K = N - 2 the seven others
+        // still outweigh one objection; at K = N - 1 they cannot, and it
+        // holds the subject until it is withdrawn.
+        ((6, 7, 1, 0), true),
+        ((7, 7, 1, 0), false),
         // K = 0 is reached with no ballots at all, until someone objects;
         // then it takes an approval to outweigh the objection.
         ((0, 0, 0, 0), true),
@@ -182,6 +187,26 @@ fn an_objection_without_a_reason_is_invalid_at_the_count_too() {
     );
     let t = tally_checked(&policy, &subject(), &ballots);
     assert_eq!((t.approvals, t.objections, t.invalid, t.reached), (1, 0, 1, true));
+}
+
+#[test]
+fn a_signed_looking_approval_with_a_reason_is_invalid_on_the_checked_path() {
+    // The rule needs no key: a record with a signature and a reason that
+    // signature cannot cover is refused the same way wherever it turns up,
+    // including a list the caller vouched for and a build that cannot
+    // verify anything. Refused first, so it buries nothing either.
+    let policy = Policy::new([who(1)], 1);
+    let mut dressed = reject(1, 20).with_reason("under duress");
+    dressed.signature = Some(vec![0u8; 64]);
+    assert_eq!(dressed.validate(), Err(Error::UnsignedReason));
+    assert_eq!(
+        record(&mut MemoryStore::default(), &policy, &subject(), dressed.clone()).unwrap_err(),
+        Error::UnsignedReason
+    );
+
+    let ballots = Ballots::assume_checked(&subject(), [approve(1, 10), dressed]);
+    let t = tally_checked(&policy, &subject(), &ballots);
+    assert_eq!((t.approvals, t.rejections, t.invalid, t.reached), (1, 0, 1, true));
 }
 
 #[test]
@@ -394,6 +419,11 @@ mod signed {
         let k = key(1);
         let policy = Policy::signed([approver(&k)], 1);
         let bare = ed25519::sign(&module(), &k, Decision::Object, 100);
+        assert_eq!(ed25519::verify(&module(), &bare), Err(Error::MissingReason));
+        // The hash of no reason is the hash of an empty one, so the same
+        // signature sits under both. Neither is a reason.
+        let blank = bare.clone().with_reason("");
+        assert_eq!(ed25519::verify(&module(), &blank), Err(Error::MissingReason));
         assert_eq!(
             record(&mut MemoryStore::default(), &policy, &module(), bare.clone()).unwrap_err(),
             Error::MissingReason

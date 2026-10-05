@@ -14,7 +14,8 @@ pub struct Policy {
     /// vote and the count in [`Policy::validate`] is the real one.
     pub approvers: BTreeSet<Approver>,
     /// The K: how many approvals a subject needs before it is reached,
-    /// over and above its objections.
+    /// over and above its objections. Above N - 2, a single objection
+    /// cannot be outweighed by the approvers who are left.
     pub threshold: u32,
     /// Refuse approvals that carry no signature. For policies whose
     /// approvers are public keys rather than principals.

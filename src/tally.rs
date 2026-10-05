@@ -21,16 +21,18 @@ pub struct Tally {
     pub ignored: u32,
     /// Records thrown out before counting: a signature that did not
     /// verify, none at all where one was needed, an objection with no
-    /// reason, or a whole list built against a different subject. Counted per record rather than per
-    /// approver, since a record refused this way has not established
-    /// whose it is.
+    /// reason, or a whole list built against a different subject. Counted
+    /// per record rather than per approver, since a record refused this
+    /// way has not established whose it is.
     pub invalid: u32,
     /// The policy's threshold at the time of the count.
     pub required: u32,
     /// `approvals >= objections + required`: approvals minus objections
     /// have reached K. Rejections weigh nothing either way. An objection
-    /// blocks nothing by itself -- it costs one more approval to overcome
-    /// -- so there is no veto, and no count goes negative.
+    /// costs one more approval to overcome, which is no veto as long as
+    /// the policy has that approval to give: the objector cannot supply
+    /// it, so at K of N with K above N - 2 one objection holds the subject
+    /// until it is withdrawn. No count goes negative.
     pub reached: bool,
 }
 
@@ -54,9 +56,18 @@ pub struct Tally {
 /// enforces when it writes, so a list assembled elsewhere tallies the way
 /// the canister does. An approval adds one, an objection takes one away,
 /// a rejection does neither, and the subject is reached when approvals
-/// are at least the threshold plus the objections. Ballots from approvers the policy no longer names
-/// are reported as ignored rather than dropped silently, so an audit can
-/// see a removed approver's history.
+/// are at least the threshold plus the objections. Ballots from approvers
+/// the policy no longer names are reported as ignored rather than dropped
+/// silently, so an audit can see a removed approver's history.
+///
+/// # A count of what it was shown
+///
+/// Objections make this count depend on what was left out. Withholding a
+/// record could once only lower `approvals`; withholding an objection now
+/// helps a subject be reached. Signatures prove the records present are
+/// real, not that the list is complete, so `reached` over a list someone
+/// else assembled means "K approvals, less the objections I was given".
+/// Collect from a source with no reason to drop one, or from several.
 ///
 /// # Not quite the rules `record` applies
 ///

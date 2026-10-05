@@ -57,8 +57,8 @@ pub use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 ///
 /// For an approval or a rejection. An objection needs its reason inside
 /// the signature and is made by [`sign_objection`]; `Decision::Object`
-/// passed here signs an objection with no reason, which every count
-/// refuses.
+/// passed here signs an objection with no reason, which [`verify`] and
+/// every count refuse.
 pub fn sign(subject: &Subject, key: &SigningKey, decision: Decision, at_ns: u64) -> Approval {
     seal(subject, key, Approval::new(approver(key), decision, at_ns))
 }
@@ -105,15 +105,16 @@ fn seal(subject: &Subject, key: &SigningKey, mut a: Approval) -> Approval {
 /// plain `verify`, a policy listing the identity point would accept one
 /// fixed signature for every message, letting anyone vote as that approver.
 ///
-/// A reason on anything but an objection is refused as
-/// [`Error::UnsignedReason`]: the message an approval or a rejection signs
-/// is the one 0.1 signed, which has no reason in it, so a reason on such a
-/// record is text the signature says nothing about.
+/// The record has to pass [`Approval::validate`] first, so `Ok` here means
+/// what it means to [`record`](crate::record) and to the counts. A reason
+/// on anything but an objection is refused as [`Error::UnsignedReason`]:
+/// the message an approval or a rejection signs is the one 0.1 signed,
+/// which has no reason in it, so a reason on such a record is text the
+/// signature says nothing about. And an objection whose reason is missing
+/// or over-long is refused however good its signature.
 pub fn verify(subject: &Subject, approval: &Approval) -> Result<(), Error> {
     let sig = approval.signature.as_ref().ok_or(Error::MissingSignature)?;
-    if approval.reason.is_some() && !approval.objects() {
-        return Err(Error::UnsignedReason);
-    }
+    approval.validate()?;
     let key = VerifyingKey::try_from(approval.approver.as_bytes())
         .map_err(|_| Error::InvalidSignature)?;
     let sig = Signature::from_slice(sig).map_err(|_| Error::InvalidSignature)?;

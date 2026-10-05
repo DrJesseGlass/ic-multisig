@@ -66,8 +66,10 @@ pub enum Decision {
     /// later with an approval needs a newer ballot.
     Reject,
     /// Counts against: a subject with an objection needs one more approval
-    /// to be reached. It blocks nothing on its own -- there is no veto --
-    /// and it must say why, in [`Approval::reason`].
+    /// to be reached. That is no veto while the policy has an approver to
+    /// spare, K at most N - 2; above that nobody is left to outweigh it,
+    /// and it holds the subject until withdrawn. It must say why, in
+    /// [`Approval::reason`].
     Object,
 }
 
@@ -143,13 +145,16 @@ impl Approval {
     }
 
     /// The rules a record must meet whatever the policy says: an objection
-    /// carries a reason, and no reason is longer than
-    /// [`MAX_REASON_BYTES`]. A reason that is empty or all whitespace is
-    /// no reason.
+    /// carries a reason, no reason is longer than [`MAX_REASON_BYTES`],
+    /// and a signed approval or rejection carries none, since its
+    /// signature would not cover it. A reason that is empty or all
+    /// whitespace is no reason.
     ///
-    /// [`record`](crate::record) refuses a ballot that fails this, and both
-    /// counts treat one as invalid, so an objection cannot cost the
-    /// subject an approval without saying what is wrong with it.
+    /// [`record`](crate::record) and `ed25519::verify` refuse a ballot
+    /// that fails this, and both counts treat one as invalid, so an
+    /// objection cannot cost the subject an approval without saying what
+    /// is wrong with it. None of it needs a key, so it holds with or
+    /// without the `ed25519` feature.
     ///
     /// ```
     /// use ic_multisig::{Approval, Approver, Decision, Error};
@@ -160,6 +165,9 @@ impl Approval {
     /// assert!(bare.with_reason("see issue 12").validate().is_ok());
     /// ```
     pub fn validate(&self) -> Result<(), Error> {
+        if self.signature.is_some() && self.reason.is_some() && !self.objects() {
+            return Err(Error::UnsignedReason);
+        }
         match &self.reason {
             Some(r) if r.len() > MAX_REASON_BYTES => Err(Error::ReasonTooLong),
             Some(r) if !r.trim().is_empty() => Ok(()),
@@ -187,7 +195,7 @@ impl Approval {
     ///
     /// with `decision` 1 to approve and 0 to reject. The reason is not in
     /// it, which is why a signed approval or rejection may not carry one:
-    /// `ed25519::verify` refuses a reason the signature says nothing
+    /// [`Approval::validate`] refuses a reason the signature says nothing
     /// about, rather than present a relayer's words as the signer's.
     ///
     /// An objection signs its reason too, as a sha256:

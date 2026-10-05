@@ -48,9 +48,10 @@ impl Store for MemoryStore {
 /// refuses outsiders, enforces the policy's signature rule, refuses an
 /// objection without a reason or any reason over
 /// [`MAX_REASON_BYTES`](crate::MAX_REASON_BYTES), refuses a ballot older
-/// than the approver's recorded one, and verifies any signature present. A signature this build cannot verify (no `ed25519`
-/// feature, or an approver that is not a 32-byte key) is refused rather
-/// than stored unchecked, whatever the policy's signature rule says.
+/// than the approver's recorded one, and verifies any signature present.
+/// A signature this build cannot verify (no `ed25519` feature, or an
+/// approver that is not a 32-byte key) is refused rather than stored
+/// unchecked, whatever the policy's signature rule says.
 ///
 /// ```
 /// use ic_multisig::{record, Approval, Approver, Decision, MemoryStore, Policy, Subject};
