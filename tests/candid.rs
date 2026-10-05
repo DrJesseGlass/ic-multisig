@@ -85,3 +85,51 @@ fn the_wire_type_is_compatible_with_v0_1_both_ways() {
     let bytes = candid::encode_one(Approval::objection(a, "see issue 12", 9)).unwrap();
     assert!(candid::decode_one::<ApprovalV01>(&bytes).is_err());
 }
+
+#[derive(candid::CandidType, serde::Deserialize, PartialEq, Debug)]
+struct TallyV01 {
+    approvals: u32,
+    rejections: u32,
+    ignored: u32,
+    invalid: u32,
+    required: u32,
+    reached: bool,
+}
+
+#[test]
+fn a_tally_crosses_between_v0_1_and_this_release() {
+    // A canister and its clients do not upgrade together, so a tally has
+    // to decode in both directions. `objections` is `opt nat32` on the
+    // wire for that reason: a required field would make every tally from
+    // a 0.1 canister undecodable here.
+    let old = TallyV01 { approvals: 2, rejections: 1, ignored: 0, invalid: 0, required: 2, reached: true };
+    let mut new = Tally {
+        approvals: 2,
+        rejections: 1,
+        objections: 0,
+        ignored: 0,
+        invalid: 0,
+        required: 2,
+        reached: true,
+    };
+
+    // 0.1 -> 0.2: no objections field, so none.
+    let bytes = candid::encode_one(&old).unwrap();
+    assert_eq!(candid::decode_one::<Tally>(&bytes).unwrap(), new);
+
+    // 0.2 -> 0.1: the old client skips the field it does not know. What
+    // it then shows is its own business: with an objection counted,
+    // `reached` is the field to read, not approvals against required.
+    new.objections = 1;
+    new.reached = false;
+    let bytes = candid::encode_one(&new).unwrap();
+    let seen = candid::decode_one::<TallyV01>(&bytes).unwrap();
+    assert_eq!((seen.approvals, seen.required, seen.reached), (2, 2, false));
+
+    // And the count itself survives its own round trip, zero included.
+    for objections in [0, 1, u32::MAX] {
+        new.objections = objections;
+        let bytes = candid::encode_one(&new).unwrap();
+        assert_eq!(candid::decode_one::<Tally>(&bytes).unwrap(), new);
+    }
+}

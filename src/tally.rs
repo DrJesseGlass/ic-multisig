@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 /// The count for one subject under one policy.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-#[cfg_attr(feature = "candid", derive(candid::CandidType))]
+#[serde(from = "TallyWire", into = "TallyWire")]
 pub struct Tally {
     /// Approvals from approvers currently in the policy.
     pub approvals: u32,
@@ -15,7 +15,11 @@ pub struct Tally {
     pub rejections: u32,
     /// Objections from approvers currently in the policy. Each one raises
     /// the approvals needed by one.
-    #[serde(default)]
+    ///
+    /// In Candid this field is `opt nat32`, and absent reads as zero: a
+    /// tally encoded before there were objections had none, and a client
+    /// on this release has to be able to read one from a canister that is
+    /// not on it yet.
     pub objections: u32,
     /// Ballots that no longer count: their approver left the policy.
     pub ignored: u32,
@@ -34,6 +38,65 @@ pub struct Tally {
     /// it, so at K of N with K above N - 2 one objection holds the subject
     /// until it is withdrawn. No count goes negative.
     pub reached: bool,
+}
+
+/// [`Tally`] as it is encoded. The same fields, except that `objections`
+/// may be missing, which is what a 0.1 tally looks like from here.
+///
+/// A serde default on the field would do for JSON, but not for Candid:
+/// there a field can be absent only if its type says so, and the type is
+/// derived from the struct. So the struct that is encoded is this one,
+/// and the public one keeps a plain count.
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "candid", derive(candid::CandidType))]
+struct TallyWire {
+    approvals: u32,
+    rejections: u32,
+    #[serde(default)]
+    objections: Option<u32>,
+    ignored: u32,
+    invalid: u32,
+    required: u32,
+    reached: bool,
+}
+
+impl From<TallyWire> for Tally {
+    fn from(w: TallyWire) -> Self {
+        Tally {
+            approvals: w.approvals,
+            rejections: w.rejections,
+            objections: w.objections.unwrap_or(0),
+            ignored: w.ignored,
+            invalid: w.invalid,
+            required: w.required,
+            reached: w.reached,
+        }
+    }
+}
+
+impl From<Tally> for TallyWire {
+    fn from(t: Tally) -> Self {
+        TallyWire {
+            approvals: t.approvals,
+            rejections: t.rejections,
+            objections: Some(t.objections),
+            ignored: t.ignored,
+            invalid: t.invalid,
+            required: t.required,
+            reached: t.reached,
+        }
+    }
+}
+
+#[cfg(feature = "candid")]
+impl candid::CandidType for Tally {
+    fn _ty() -> candid::types::Type {
+        TallyWire::ty()
+    }
+
+    fn idl_serialize<S: candid::types::Serializer>(&self, serializer: S) -> Result<(), S::Error> {
+        TallyWire::from(self.clone()).idl_serialize(serializer)
+    }
 }
 
 /// Verify `ballots` against `subject` and count what survives.

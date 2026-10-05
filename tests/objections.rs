@@ -264,6 +264,11 @@ fn v0_1_records_still_load_and_write_back_unchanged() {
     )
     .unwrap();
     assert_eq!((t.approvals, t.objections, t.reached), (2, 0, true));
+    // Written back, the count is a plain number, zero included.
+    assert_eq!(
+        serde_json::to_string(&t).unwrap(),
+        r#"{"approvals":2,"rejections":1,"objections":0,"ignored":0,"invalid":0,"required":2,"reached":true}"#
+    );
 }
 
 #[test]
