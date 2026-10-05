@@ -1,28 +1,27 @@
-// The README says its quick start is the crate-root doctest. That claim was
+// The README says its examples are the crate-root doctests. That claim was
 // wrong once already -- the README carried a snippet that named undefined
 // variables and used `?` with nothing to return to, while the doctest that
 // actually compiled was a different text. A claim about compilation is worth
-// only as much as the check behind it, so here is the check: the two blocks
+// only as much as the check behind it, so here is the check: the blocks
 // must be the same bytes, and the doctest run makes those bytes compile.
 
-/// The contents of the first fenced block in `text`, fences excluded.
-fn first_fenced_block(text: &str) -> String {
-    let mut out = String::new();
-    let mut inside = false;
+/// The contents of every fenced block in `text`, in order, fences excluded.
+fn fenced_blocks(text: &str) -> Vec<String> {
+    let mut blocks = Vec::new();
+    let mut open: Option<String> = None;
     for line in text.lines() {
         if line.trim_start().starts_with("```") {
-            if inside {
-                return out;
+            match open.take() {
+                Some(block) => blocks.push(block),
+                None => open = Some(String::new()),
             }
-            inside = true;
-            continue;
-        }
-        if inside {
-            out.push_str(line);
-            out.push('\n');
+        } else if let Some(block) = open.as_mut() {
+            block.push_str(line);
+            block.push('\n');
         }
     }
-    panic!("no fenced code block, or no closing fence");
+    assert!(open.is_none(), "a fenced code block is never closed");
+    blocks
 }
 
 /// `src/lib.rs` with the `//!` markers taken off, so the crate docs can be
@@ -37,12 +36,12 @@ fn crate_docs(source: &str) -> String {
 }
 
 #[test]
-fn readme_quick_start_is_the_crate_doctest() {
-    let readme = include_str!("../README.md");
-    let lib = include_str!("../src/lib.rs");
+fn readme_examples_are_the_crate_doctests() {
+    let readme = fenced_blocks(include_str!("../README.md"));
+    let lib = fenced_blocks(&crate_docs(include_str!("../src/lib.rs")));
+    assert!(!readme.is_empty(), "README.md has no fenced code block");
     assert_eq!(
-        first_fenced_block(readme),
-        first_fenced_block(&crate_docs(lib)),
-        "README.md and the crate-root example have drifted apart"
+        readme, lib,
+        "README.md and the crate-root examples have drifted apart"
     );
 }
