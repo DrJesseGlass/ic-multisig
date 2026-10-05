@@ -28,7 +28,10 @@ pub struct Ballots {
 
 impl Ballots {
     /// Keep the records that carry a signature valid for `subject`, and
-    /// set every other record aside in [`Ballots::rejected`].
+    /// set every other record aside in [`Ballots::rejected`]. A record
+    /// that fails [`Approval::validate`] -- an objection with no reason --
+    /// does not verify, and is set aside with them as
+    /// [`record`](crate::record) would have refused it.
     ///
     /// This is the constructor for records that arrived over a path you do
     /// not control: a verifier collecting signed attestations on a module

@@ -3,9 +3,10 @@
 //! A **policy** names N approvers and a threshold K. A **subject** is a
 //! 32-byte hash with a kind tag: a commit a repo wants to deploy, a module
 //! hash a release wants attested, a tally an election wants published. Each
-//! approver casts one **approval** (approve or reject) per subject, later
-//! ballots replacing earlier ones. A **tally** counts the ballots that count
-//! -- from approvers currently in the policy -- and says whether K is reached.
+//! approver casts one **approval** per subject -- approve, reject, or object
+//! with a reason -- later ballots replacing earlier ones. A **tally** counts
+//! the ballots that count -- from approvers currently in the policy -- and
+//! says whether K is reached: approvals, less objections.
 //!
 //! Two flavors share the same records:
 //!
@@ -68,6 +69,52 @@
 //!
 //! For approvals that must be checkable outside the canister, see the
 //! `ed25519` module (feature `ed25519`).
+//!
+//! # Objections
+//!
+//! An approver who thinks a subject should not pass can **object**. An
+//! objection must give a reason (a short text or a link, at most 1024 bytes)
+//! and counts -1: the subject is reached when approvals minus objections
+//! reach K. So an objection blocks nothing by itself. It costs one more
+//! approval to overcome, and it puts a reason in front of the other
+//! approvers. A rejection still weighs nothing: it says "no", or withdraws
+//! an earlier approval, without raising the bar for anyone else.
+//!
+//! That holds while the policy has the extra approval to give. An objector
+//! cannot also approve, so K of N absorbs one objection only when
+//! K + 1 <= N - 1. At K = N - 1 or K = N nobody is left to outweigh it, and
+//! a single objection holds the subject until its author casts another
+//! ballot or leaves the policy. Keep K at N - 2 or below where no one
+//! approver should be able to do that.
+//!
+//! ```
+//! use ic_multisig::{record, Approval, Approver, Decision, MemoryStore, Policy, Subject};
+//!
+//! fn main() -> Result<(), ic_multisig::Error> {
+//!     let alice = Approver::from_bytes(b"alice");
+//!     let bob = Approver::from_bytes(b"bob");
+//!     let carol = Approver::from_bytes(b"carol");
+//!     let policy = Policy::new([alice.clone(), bob.clone(), carol.clone()], 1);
+//!     let subject = Subject::of_short_hash("commit", &[0xab; 20]);
+//!     let mut store = MemoryStore::default();
+//!
+//!     let tally = record(&mut store, &policy, &subject,
+//!         Approval::new(alice, Decision::Approve, 1_000))?;
+//!     assert!(tally.reached);
+//!
+//!     // An objection is a ballot with a reason, and takes one approval away.
+//!     let tally = record(&mut store, &policy, &subject,
+//!         Approval::objection(bob, "skips the schema migration", 2_000))?;
+//!     assert_eq!((tally.approvals, tally.objections), (1, 1));
+//!     assert!(!tally.reached);
+//!
+//!     // It is not a veto: one more approval outweighs it.
+//!     let tally = record(&mut store, &policy, &subject,
+//!         Approval::new(carol, Decision::Approve, 3_000))?;
+//!     assert!(tally.reached);
+//!     Ok(())
+//! }
+//! ```
 
 // Every public item carries its own documentation: the crate is read as
 // much from docs.rs as from here.
@@ -88,7 +135,7 @@ mod tally;
 #[cfg(feature = "ed25519")]
 pub mod ed25519;
 
-pub use approval::{Approval, Approver, Decision};
+pub use approval::{Approval, Approver, Decision, MAX_REASON_BYTES};
 pub use ballots::Ballots;
 pub use policy::Policy;
 pub use store::{record, MemoryStore, Store};
@@ -112,6 +159,16 @@ pub enum Error {
     /// The approver already has a ballot on this subject with a later
     /// `at_ns`. Replaying an old signed ballot must not undo a newer one.
     Superseded,
+    /// An objection with no reason, or one that is empty. An objection
+    /// costs the subject an approval, and the price of that is saying why.
+    MissingReason,
+    /// The reason is longer than [`MAX_REASON_BYTES`].
+    ReasonTooLong,
+    /// A signed approval or rejection carrying a reason. Their signatures
+    /// do not cover one, so whoever relayed the record could have written
+    /// it. Only a signed objection can carry a reason. Reported whether or
+    /// not this build can check the signature itself.
+    UnsignedReason,
 }
 
 impl core::fmt::Display for Error {
@@ -125,6 +182,13 @@ impl core::fmt::Display for Error {
             }
             Error::InvalidPolicy(why) => write!(f, "invalid policy: {why}"),
             Error::Superseded => write!(f, "a later ballot by this approver is already recorded"),
+            Error::MissingReason => write!(f, "an objection needs a reason"),
+            Error::ReasonTooLong => {
+                write!(f, "reason exceeds {} bytes", crate::MAX_REASON_BYTES)
+            }
+            Error::UnsignedReason => {
+                write!(f, "a signed approval or rejection cannot carry a reason")
+            }
         }
     }
 }

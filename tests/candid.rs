@@ -18,9 +18,118 @@ fn public_types_round_trip_through_candid() {
     round_trip(&ap);
     ap.signature = Some(vec![9u8; 64]);
     round_trip(&ap);
+    // An objection, and a reason on each of the other two decisions.
+    round_trip(&Approval::objection(a.clone(), "see issue 12", 2));
+    round_trip(&Approval::new(a.clone(), Decision::Approve, 3).with_reason("lgtm"));
+    round_trip(&Approval::new(a.clone(), Decision::Reject, 4).with_reason("withdrawn"));
+    let mut signed = Approval::objection(a.clone(), "see issue 12", 5);
+    signed.signature = Some(vec![9u8; 64]);
+    round_trip(&signed);
     round_trip(&Policy::signed([a], 1));
-    round_trip(&Tally { approvals: 1, rejections: 0, ignored: 0, invalid: 0, required: 1, reached: true });
+    round_trip(&Tally {
+        approvals: 1,
+        rejections: 0,
+        objections: 1,
+        ignored: 0,
+        invalid: 0,
+        required: 1,
+        reached: false,
+    });
     // The principal conversion the docs promise.
     let p = candid::Principal::anonymous();
     assert_eq!(Approver::from(p).principal(), Some(p));
+}
+
+// The 0.1 wire types, as a client built against that release has them: no
+// `reason` on the record, no `Object` in the variant.
+#[derive(candid::CandidType, serde::Deserialize, PartialEq, Debug)]
+enum DecisionV01 {
+    Approve,
+    Reject,
+}
+
+#[derive(candid::CandidType, serde::Deserialize, PartialEq, Debug)]
+struct ApprovalV01 {
+    approver: Approver,
+    decision: DecisionV01,
+    at_ns: u64,
+    signature: Option<Vec<u8>>,
+}
+
+#[test]
+fn the_wire_type_is_compatible_with_v0_1_both_ways() {
+    let a = Approver::from_bytes(vec![7u8; 8]);
+    let old = ApprovalV01 {
+        approver: a.clone(),
+        decision: DecisionV01::Reject,
+        at_ns: 9,
+        signature: Some(vec![9u8; 64]),
+    };
+
+    // 0.1 -> 0.2: `reason` is `opt text`, so a record without it decodes,
+    // with none.
+    let mut new = Approval::new(a.clone(), Decision::Reject, 9);
+    new.signature = Some(vec![9u8; 64]);
+    let bytes = candid::encode_one(&old).unwrap();
+    assert_eq!(candid::decode_one::<Approval>(&bytes).unwrap(), new);
+
+    // 0.2 -> 0.1: an old client reads any ballot it could have cast, and
+    // skips a reason it has no field for.
+    let bytes = candid::encode_one(&new).unwrap();
+    assert_eq!(candid::decode_one::<ApprovalV01>(&bytes).unwrap(), old);
+    let bytes = candid::encode_one(new.with_reason("withdrawn")).unwrap();
+    assert_eq!(candid::decode_one::<ApprovalV01>(&bytes).unwrap(), old);
+
+    // What it cannot read is the decision it has never heard of. That is
+    // the breaking part of this release, and it fails loudly.
+    let bytes = candid::encode_one(Approval::objection(a, "see issue 12", 9)).unwrap();
+    assert!(candid::decode_one::<ApprovalV01>(&bytes).is_err());
+}
+
+#[derive(candid::CandidType, serde::Deserialize, PartialEq, Debug)]
+struct TallyV01 {
+    approvals: u32,
+    rejections: u32,
+    ignored: u32,
+    invalid: u32,
+    required: u32,
+    reached: bool,
+}
+
+#[test]
+fn a_tally_crosses_between_v0_1_and_this_release() {
+    // A canister and its clients do not upgrade together, so a tally has
+    // to decode in both directions. `objections` is `opt nat32` on the
+    // wire for that reason: a required field would make every tally from
+    // a 0.1 canister undecodable here.
+    let old = TallyV01 { approvals: 2, rejections: 1, ignored: 0, invalid: 0, required: 2, reached: true };
+    let mut new = Tally {
+        approvals: 2,
+        rejections: 1,
+        objections: 0,
+        ignored: 0,
+        invalid: 0,
+        required: 2,
+        reached: true,
+    };
+
+    // 0.1 -> 0.2: no objections field, so none.
+    let bytes = candid::encode_one(&old).unwrap();
+    assert_eq!(candid::decode_one::<Tally>(&bytes).unwrap(), new);
+
+    // 0.2 -> 0.1: the old client skips the field it does not know. What
+    // it then shows is its own business: with an objection counted,
+    // `reached` is the field to read, not approvals against required.
+    new.objections = 1;
+    new.reached = false;
+    let bytes = candid::encode_one(&new).unwrap();
+    let seen = candid::decode_one::<TallyV01>(&bytes).unwrap();
+    assert_eq!((seen.approvals, seen.required, seen.reached), (2, 2, false));
+
+    // And the count itself survives its own round trip, zero included.
+    for objections in [0, 1, u32::MAX] {
+        new.objections = objections;
+        let bytes = candid::encode_one(&new).unwrap();
+        assert_eq!(candid::decode_one::<Tally>(&bytes).unwrap(), new);
+    }
 }

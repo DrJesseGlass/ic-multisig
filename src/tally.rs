@@ -1,4 +1,4 @@
-use crate::approval::Approval;
+use crate::approval::{Approval, Decision};
 use crate::ballots::Ballots;
 use crate::policy::Policy;
 use crate::subject::Subject;
@@ -7,25 +7,96 @@ use std::collections::BTreeMap;
 
 /// The count for one subject under one policy.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-#[cfg_attr(feature = "candid", derive(candid::CandidType))]
+#[serde(from = "TallyWire", into = "TallyWire")]
 pub struct Tally {
     /// Approvals from approvers currently in the policy.
     pub approvals: u32,
     /// Rejections from approvers currently in the policy.
     pub rejections: u32,
+    /// Objections from approvers currently in the policy. Each one raises
+    /// the approvals needed by one.
+    ///
+    /// In Candid this field is `opt nat32`, and absent reads as zero: a
+    /// tally encoded before there were objections had none, and a client
+    /// on this release has to be able to read one from a canister that is
+    /// not on it yet.
+    pub objections: u32,
     /// Ballots that no longer count: their approver left the policy.
     pub ignored: u32,
     /// Records thrown out before counting: a signature that did not
-    /// verify, none at all where one was needed, or a whole list built
-    /// against a different subject. Counted per record rather than per
-    /// approver, since a record refused this way has not established
-    /// whose it is.
+    /// verify, none at all where one was needed, an objection with no
+    /// reason, or a whole list built against a different subject. Counted
+    /// per record rather than per approver, since a record refused this
+    /// way has not established whose it is.
     pub invalid: u32,
     /// The policy's threshold at the time of the count.
     pub required: u32,
-    /// `approvals >= required`. Rejections do not block: a subject is
-    /// reached the moment K approvers say yes, whatever the rest said.
+    /// `approvals >= objections + required`: approvals minus objections
+    /// have reached K. Rejections weigh nothing either way. An objection
+    /// costs one more approval to overcome, which is no veto as long as
+    /// the policy has that approval to give: the objector cannot supply
+    /// it, so at K of N with K above N - 2 one objection holds the subject
+    /// until it is withdrawn. No count goes negative.
     pub reached: bool,
+}
+
+/// [`Tally`] as it is encoded. The same fields, except that `objections`
+/// may be missing, which is what a 0.1 tally looks like from here.
+///
+/// A serde default on the field would do for JSON, but not for Candid:
+/// there a field can be absent only if its type says so, and the type is
+/// derived from the struct. So the struct that is encoded is this one,
+/// and the public one keeps a plain count.
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "candid", derive(candid::CandidType))]
+struct TallyWire {
+    approvals: u32,
+    rejections: u32,
+    #[serde(default)]
+    objections: Option<u32>,
+    ignored: u32,
+    invalid: u32,
+    required: u32,
+    reached: bool,
+}
+
+impl From<TallyWire> for Tally {
+    fn from(w: TallyWire) -> Self {
+        Tally {
+            approvals: w.approvals,
+            rejections: w.rejections,
+            objections: w.objections.unwrap_or(0),
+            ignored: w.ignored,
+            invalid: w.invalid,
+            required: w.required,
+            reached: w.reached,
+        }
+    }
+}
+
+impl From<Tally> for TallyWire {
+    fn from(t: Tally) -> Self {
+        TallyWire {
+            approvals: t.approvals,
+            rejections: t.rejections,
+            objections: Some(t.objections),
+            ignored: t.ignored,
+            invalid: t.invalid,
+            required: t.required,
+            reached: t.reached,
+        }
+    }
+}
+
+#[cfg(feature = "candid")]
+impl candid::CandidType for Tally {
+    fn _ty() -> candid::types::Type {
+        TallyWire::ty()
+    }
+
+    fn idl_serialize<S: candid::types::Serializer>(&self, serializer: S) -> Result<(), S::Error> {
+        TallyWire::from(self.clone()).idl_serialize(serializer)
+    }
 }
 
 /// Verify `ballots` against `subject` and count what survives.
@@ -46,9 +117,20 @@ pub struct Tally {
 /// Each surviving approver counts once, by their latest ballot (highest
 /// `at_ns`; on a tie, the later one in the list) -- the rule [`cast`]
 /// enforces when it writes, so a list assembled elsewhere tallies the way
-/// the canister does. Ballots from approvers the policy no longer names
-/// are reported as ignored rather than dropped silently, so an audit can
-/// see a removed approver's history.
+/// the canister does. An approval adds one, an objection takes one away,
+/// a rejection does neither, and the subject is reached when approvals
+/// are at least the threshold plus the objections. Ballots from approvers
+/// the policy no longer names are reported as ignored rather than dropped
+/// silently, so an audit can see a removed approver's history.
+///
+/// # A count of what it was shown
+///
+/// Objections make this count depend on what was left out. Withholding a
+/// record could once only lower `approvals`; withholding an objection now
+/// helps a subject be reached. Signatures prove the records present are
+/// real, not that the list is complete, so `reached` over a list someone
+/// else assembled means "K approvals, less the objections I was given".
+/// Collect from a source with no reason to drop one, or from several.
 ///
 /// # Not quite the rules `record` applies
 ///
@@ -97,7 +179,9 @@ pub fn tally(policy: &Policy, subject: &Subject, ballots: &[Approval]) -> Tally 
 /// rather than about the record: an approver the policy does not name is
 /// ignored, and under
 /// [`require_signature`](crate::Policy::require_signature) a record with
-/// no signature is invalid however it got here.
+/// no signature is invalid however it got here. So does
+/// [`Approval::validate`], which needs nothing but the record: an
+/// objection with no reason is invalid on this path too.
 ///
 /// `subject` is redundant with [`Ballots::subject`] and that is the point:
 /// it is the caller's statement of what this count is about, checked
@@ -135,6 +219,7 @@ pub fn tally_checked(policy: &Policy, subject: &Subject, ballots: &Ballots) -> T
     let mut t = Tally {
         approvals: 0,
         rejections: 0,
+        objections: 0,
         ignored: 0,
         invalid: ballots.rejected().len() as u32,
         required: policy.threshold,
@@ -153,7 +238,7 @@ pub fn tally_checked(policy: &Policy, subject: &Subject, ballots: &Ballots) -> T
     // not be able to supersede one that can.
     let mut latest: BTreeMap<&[u8], &Approval> = BTreeMap::new();
     for b in ballots.as_slice() {
-        if policy.require_signature && b.signature.is_none() {
+        if (policy.require_signature && b.signature.is_none()) || b.validate().is_err() {
             t.invalid += 1;
             continue;
         }
@@ -166,13 +251,17 @@ pub fn tally_checked(policy: &Policy, subject: &Subject, ballots: &Ballots) -> T
     for b in latest.values() {
         if !policy.is_approver(&b.approver) {
             t.ignored += 1;
-        } else if b.approves() {
-            t.approvals += 1;
         } else {
-            t.rejections += 1;
+            match b.decision {
+                Decision::Approve => t.approvals += 1,
+                Decision::Reject => t.rejections += 1,
+                Decision::Object => t.objections += 1,
+            }
         }
     }
-    t.reached = t.approvals >= policy.threshold;
+    // Approvals minus objections, without the subtraction: nothing here
+    // can go below zero, and the sum is widened so it cannot wrap either.
+    t.reached = u64::from(t.approvals) >= u64::from(t.objections) + u64::from(policy.threshold);
     t
 }
 

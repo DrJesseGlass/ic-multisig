@@ -45,11 +45,13 @@ impl Store for MemoryStore {
 
 /// Validate an approval against the policy, persist it, and return the new
 /// tally. This is the one entry point a canister endpoint should call: it
-/// refuses outsiders, enforces the policy's signature rule, refuses a
-/// ballot older than the approver's recorded one, and verifies any
-/// signature present. A signature this build cannot verify (no `ed25519`
-/// feature, or an approver that is not a 32-byte key) is refused rather
-/// than stored unchecked, whatever the policy's signature rule says.
+/// refuses outsiders, enforces the policy's signature rule, refuses an
+/// objection without a reason or any reason over
+/// [`MAX_REASON_BYTES`](crate::MAX_REASON_BYTES), refuses a ballot older
+/// than the approver's recorded one, and verifies any signature present.
+/// A signature this build cannot verify (no `ed25519` feature, or an
+/// approver that is not a 32-byte key) is refused rather than stored
+/// unchecked, whatever the policy's signature rule says.
 ///
 /// ```
 /// use ic_multisig::{record, Approval, Approver, Decision, MemoryStore, Policy, Subject};
@@ -84,6 +86,7 @@ pub fn record(
     if !policy.is_approver(&approval.approver) {
         return Err(Error::NotAnApprover);
     }
+    approval.validate()?;
     match &approval.signature {
         None if policy.require_signature => return Err(Error::MissingSignature),
         None => {}

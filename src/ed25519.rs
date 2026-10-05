@@ -1,5 +1,6 @@
 //! Signed approvals with Ed25519. The approver identity is the 32-byte
-//! verifying key; the signature covers [`Approval::message`].
+//! verifying key; the signature covers [`Approval::message`]: the subject,
+//! the decision and the time, and for an objection its reason.
 //!
 //! This is the flavor that leaves the canister. A signed approval is a
 //! bearer record: whoever holds it can present it anywhere, and anyone
@@ -53,12 +54,46 @@ pub use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 /// The approver is derived from `key`, so a signed approval always names
 /// the key that signed it; `at_ns` is the signer's own claim about when,
 /// which the supersede rule in [`cast`](crate::cast) reads.
+///
+/// For an approval or a rejection. An objection needs its reason inside
+/// the signature and is made by [`sign_objection`]; `Decision::Object`
+/// passed here signs an objection with no reason, which [`verify`] and
+/// every count refuse.
 pub fn sign(subject: &Subject, key: &SigningKey, decision: Decision, at_ns: u64) -> Approval {
-    let mut a = Approval::new(
-        Approver::from_bytes(key.verifying_key().to_bytes()),
-        decision,
-        at_ns,
-    );
+    seal(subject, key, Approval::new(approver(key), decision, at_ns))
+}
+
+/// Produce a signed objection. The signature covers the reason, so the
+/// record cannot be relayed with a different one, or with the decision
+/// changed.
+///
+/// ```
+/// use ic_multisig::ed25519::{self, SigningKey};
+/// use ic_multisig::Subject;
+///
+/// let key = SigningKey::from_bytes(&[1u8; 32]);
+/// let subject = Subject::of_bytes("module", b"wasm bytes");
+///
+/// let mut objection = ed25519::sign_objection(&subject, &key, "not the audited build", 100);
+/// assert!(ed25519::verify(&subject, &objection).is_ok());
+///
+/// objection.reason = Some("looks fine".into());
+/// assert!(ed25519::verify(&subject, &objection).is_err());
+/// ```
+pub fn sign_objection(
+    subject: &Subject,
+    key: &SigningKey,
+    reason: impl Into<String>,
+    at_ns: u64,
+) -> Approval {
+    seal(subject, key, Approval::objection(approver(key), reason, at_ns))
+}
+
+fn approver(key: &SigningKey) -> Approver {
+    Approver::from_bytes(key.verifying_key().to_bytes())
+}
+
+fn seal(subject: &Subject, key: &SigningKey, mut a: Approval) -> Approval {
     let sig: Signature = key.sign(&a.message(subject));
     a.signature = Some(sig.to_bytes().to_vec());
     a
@@ -69,8 +104,17 @@ pub fn sign(subject: &Subject, key: &SigningKey, decision: Decision, at_ns: u64)
 /// Strict verification: a small-order (weak) key or `R` is refused. Under
 /// plain `verify`, a policy listing the identity point would accept one
 /// fixed signature for every message, letting anyone vote as that approver.
+///
+/// The record has to pass [`Approval::validate`] first, so `Ok` here means
+/// what it means to [`record`](crate::record) and to the counts. A reason
+/// on anything but an objection is refused as [`Error::UnsignedReason`]:
+/// the message an approval or a rejection signs is the one 0.1 signed,
+/// which has no reason in it, so a reason on such a record is text the
+/// signature says nothing about. And an objection whose reason is missing
+/// or over-long is refused however good its signature.
 pub fn verify(subject: &Subject, approval: &Approval) -> Result<(), Error> {
     let sig = approval.signature.as_ref().ok_or(Error::MissingSignature)?;
+    approval.validate()?;
     let key = VerifyingKey::try_from(approval.approver.as_bytes())
         .map_err(|_| Error::InvalidSignature)?;
     let sig = Signature::from_slice(sig).map_err(|_| Error::InvalidSignature)?;

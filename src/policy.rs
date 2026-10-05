@@ -5,14 +5,17 @@ use std::collections::BTreeSet;
 
 /// N approvers and a threshold K. `threshold == 0` means no approval is
 /// needed and every subject is reached; that is the "deploy on push" default
-/// a consumer starts from.
+/// a consumer starts from. An objection counts there as anywhere: a subject
+/// one of the approvers objects to waits for an approval to outweigh it.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug, Default)]
 #[cfg_attr(feature = "candid", derive(candid::CandidType))]
 pub struct Policy {
     /// The N. Held as a set, so an approver listed twice still gets one
     /// vote and the count in [`Policy::validate`] is the real one.
     pub approvers: BTreeSet<Approver>,
-    /// The K: how many approvals a subject needs before it is reached.
+    /// The K: how many approvals a subject needs before it is reached,
+    /// over and above its objections. Above N - 2, a single objection
+    /// cannot be outweighed by the approvers who are left.
     pub threshold: u32,
     /// Refuse approvals that carry no signature. For policies whose
     /// approvers are public keys rather than principals.
