@@ -16,10 +16,10 @@ https://github.com/DrJesseGlass/ic-multisig/issues/new/choose
 
 ## What counts
 
-ic-multisig's promise is that a tally says `reached` only when K approvers
-currently in the policy approved that subject, less objections, and that a
-signed approval proves its approver made exactly that decision about
-exactly that subject. Anything that breaks that promise is in scope, in
+ic-multisig's promise is that a tally says `reached` only when approvals
+of that subject from approvers currently in the policy, less their
+objections, reach K, and that a signed approval proves its approver made
+exactly that decision about exactly that subject. Anything that breaks that promise is in scope, in
 particular:
 
 - signatures (`ed25519` feature): a record `ed25519::verify` accepts that
@@ -30,8 +30,8 @@ particular:
 - counting: a `tally` that counts an unsigned or invalid record, an
   approver counted twice, an approver outside the policy counted at all,
   or `reached` reported below the threshold;
-- suppression: a record that is refused yet still supersedes or removes an
-  honest approver's ballot (`cast`, `record`, `Ballots::verified`);
+- suppression: a record that `record`, `tally` or `tally_checked` refuses
+  and that still supersedes or removes an honest approver's ballot;
 - `Ballots`: a way to have `tally_checked` count ballots against a subject
   other than the one they were checked for;
 - decoding: a serde or candid encoding that decodes to a different record
@@ -42,6 +42,14 @@ particular:
 - `Ballots::assume_checked` and `tally_checked` count what the caller
   vouched for. Passing them records nobody authenticated is the caller's
   bug, and the documented meaning of the name.
+- `cast` is list maintenance: it applies the latest-ballot rule and checks
+  nothing else, as its documentation says. A forged record displacing a
+  real one in a list built with `cast` alone is not a report; one that
+  survives into a count by `tally`, or into a store through `record`, is.
+- A tally is a count of what it was shown. Signatures prove the records
+  present are real, not that the list is complete, so a subject reached
+  because whoever assembled the list left an objection out is the
+  documented limit of counting someone else's list (`tally`).
 - The `at_ns` on a signed approval is the signer's own claim. An approver
   who dates their own ballot to win the latest-ballot rule is using their
   own vote.

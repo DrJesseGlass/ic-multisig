@@ -164,9 +164,12 @@ graph produce a `SigningKey` that `sign` will not accept.
 
 ## Reporting
 
-A bug: https://github.com/DrJesseGlass/ic-multisig/issues/new/choose. A
-security problem: privately, through the form SECURITY.md names, never in
-a public issue.
+A bug: https://github.com/DrJesseGlass/ic-multisig/issues/new/choose.
+
+A security problem: privately, never in a public issue, at
+https://github.com/DrJesseGlass/ic-multisig/security/advisories/new.
+[SECURITY.md](https://github.com/DrJesseGlass/ic-multisig/blob/main/SECURITY.md)
+says what is in scope.
 
 ## Conventions
 
