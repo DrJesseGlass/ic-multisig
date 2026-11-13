@@ -1,6 +1,7 @@
 # Dependabot: security updates for every advisory against a dependency in
 # Cargo.lock (GitHub's advisory database includes RustSec), and routine
-# version updates on the schedule below. Each update is a pull request.
+# version updates on the schedules below. Each update is a pull request,
+# tested by ci.yml.
 #
 # This is a library, so Cargo.lock decides only what this repo's own tests
 # run against; what a consumer resolves is decided by the requirements in
@@ -8,11 +9,6 @@
 # One that changes a requirement in Cargo.toml reaches consumers only with
 # a release, and a release changes the module hash of every canister that
 # takes it (ic-git, ic-vote).
-#
-# No workflow tests these pull requests yet. Before merging one, check it
-# out and run the tests with no features and with all of them:
-#
-#     cargo test && cargo test --all-features
 #
 # Dependabot pushes its pull requests to branches named dependabot/<...>.
 # Git cannot create those while a branch named plainly `dependabot` exists
@@ -49,6 +45,24 @@ updates:
       # bump is a breaking one, so only patches come through.
       - dependency-name: candid
         update-types: [version-update:semver-major, version-update:semver-minor]
+      # sha2 is not public API, but it is shared: candid and ed25519-dalek 2
+      # are on sha2 0.10, so 0.11 here puts two copies of sha2 and digest
+      # in every consumer, which ci.yml refuses and so does ic-git's
+      # dependency gate. It moves by hand when those two have moved; drop
+      # this entry then.
+      - dependency-name: sha2
+        update-types: [version-update:semver-major, version-update:semver-minor]
+
+  # The workflow's actions.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ["*"]
 
 # Not covered, deliberately: rust-toolchain.toml. It is pinned to match
 # ic-git's reproducible build and moves by hand with it.
