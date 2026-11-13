@@ -1,0 +1,49 @@
+# Tests every pull request, Dependabot's included: the tests with no
+# features and with all of them, the wasm build the canisters do, and one
+# version of each crate in what a canister would link.
+#
+# The last is the check a passing test run does not make. A bump can
+# compile, pass every test, and still leave a consumer with two copies of
+# a crate: sha2 0.11 did exactly that (pull request #8), since candid and
+# ed25519-dalek 2 stay on sha2 0.10. ic-git's dependency gate refuses a
+# split graph (its deny.toml, multiple-versions), so a release carrying
+# one could not be taken there at all.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      # rust-toolchain.toml pins the channel and the wasm target; rustup on
+      # the runner installs them on first use. --locked everywhere: a
+      # change that would rewrite Cargo.lock fails here rather than passing
+      # on a dependency graph nobody committed.
+      - name: Tests, no features
+        run: cargo test --locked -q
+      - name: Tests, all features
+        run: cargo test --locked -q --all-features
+      - name: Wasm build
+        run: cargo build --locked -q --all-features --target wasm32-unknown-unknown
+      # Normal dependencies for the wasm target only: build scripts, proc
+      # macros and dev-dependencies never reach a canister, and those may
+      # split (syn does) without costing a consumer anything.
+      - name: One version of each crate
+        run: |
+          dups=$(cargo tree --locked --all-features --duplicates \
+            --edges normal,no-proc-macro --target wasm32-unknown-unknown)
+          if [ -n "$dups" ]; then
+            echo "More than one version of a crate would be linked."
+            echo "Each is listed with what brings it in:"
+            echo "$dups"
+            exit 1
+          fi
