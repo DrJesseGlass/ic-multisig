@@ -152,6 +152,14 @@ Take the key types from `ic_multisig::ed25519`, which re-exports
 `cargo add ed25519-dalek` now resolves 3, and two major versions in one
 graph produce a `SigningKey` that `sign` will not accept.
 
+`sha2` is taken at 0.10 or 0.11 (since 0.2.1), so a consumer whose other
+dependencies have moved to 0.11 links one sha2 rather than two. Cargo
+gives each crate the newest version it may have, though, and `candid` and
+`ed25519-dalek` 2 still need 0.10: a lock made fresh, with either
+feature on, has both. To keep the one, name the 0.11 version the lock
+holds: `cargo update -p sha2@0.11.1 --precise 0.10.9`. A lock that
+already has a single sha2 keeps it through `cargo update -p ic-multisig`.
+
 ## Consumers
 
 - ic-git: voters named on a repo approve a commit before the deploy queue
