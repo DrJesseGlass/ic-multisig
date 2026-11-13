@@ -45,11 +45,13 @@ updates:
       # bump is a breaking one, so only patches come through.
       - dependency-name: candid
         update-types: [version-update:semver-major, version-update:semver-minor]
-      # sha2 is not public API, but it is shared: candid and ed25519-dalek 2
-      # are on sha2 0.10, so 0.11 here puts two copies of sha2 and digest
-      # in every consumer, which ci.yml refuses and so does ic-git's
-      # dependency gate. It moves by hand when those two have moved; drop
-      # this entry then.
+      # sha2 is not public API, but it is shared. Cargo.toml takes 0.10 or
+      # 0.11, and Cargo.lock holds 0.10 because candid and ed25519-dalek 2
+      # need it: moving the lock to 0.11 puts two copies of sha2 and digest
+      # in the graph, which ci.yml refuses, and narrowing the requirement
+      # to 0.11 would force that on every consumer. ci.yml tests the 0.11
+      # end of the range in its own job. The lock moves by hand when those
+      # two have moved; drop this entry then.
       - dependency-name: sha2
         update-types: [version-update:semver-major, version-update:semver-minor]
 

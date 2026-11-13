@@ -47,3 +47,26 @@ jobs:
             echo "$dups"
             exit 1
           fi
+
+  # The other end of the sha2 range. Cargo.toml takes 0.10 or 0.11 and the
+  # committed lock holds 0.10, so the job above never compiles this crate
+  # against 0.11. This one moves sha2 forward in a lock it throws away,
+  # checks the move happened, and runs the same tests. The graph is split
+  # here on purpose (candid and ed25519-dalek 2 stay on 0.10), which is
+  # why the one-version check is not repeated.
+  sha2-newest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Move this crate to the newest sha2 the range allows
+        run: |
+          cargo update sha2
+          cargo tree --all-features --edges normal --depth 1 | tee tree.txt
+          grep -q 'sha2 v0\.11\.' tree.txt
+      - name: Tests, no features
+        run: cargo test --locked -q
+      - name: Tests, all features
+        run: cargo test --locked -q --all-features
+      - name: Wasm build
+        run: cargo build --locked -q --all-features --target wasm32-unknown-unknown
