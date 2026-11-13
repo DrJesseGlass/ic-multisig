@@ -162,6 +162,12 @@ graph produce a `SigningKey` that `sign` will not accept.
   module hash (`kind = "module"`), signed, so a browser extension can count
   them against a trusted keyset.
 
+## Reporting
+
+A bug: https://github.com/DrJesseGlass/ic-multisig/issues/new/choose. A
+security problem: privately, through the form SECURITY.md names, never in
+a public issue.
+
 ## Conventions
 
 ASCII only, in code, comments, docs, and commit messages; the pre-commit
