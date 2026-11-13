@@ -5,8 +5,9 @@
 # This is a library, so Cargo.lock decides only what this repo's own tests
 # run against; what a consumer resolves is decided by the requirements in
 # Cargo.toml. A pull request that touches only Cargo.lock needs no release.
-# One that changes a requirement in Cargo.toml does, and a release changes
-# the module hash of every canister that takes it (ic-git, ic-vote).
+# One that changes a requirement in Cargo.toml reaches consumers only with
+# a release, and a release changes the module hash of every canister that
+# takes it (ic-git, ic-vote).
 #
 # No workflow tests these pull requests yet. Before merging one, check it
 # out and run the tests with no features and with all of them:

@@ -56,8 +56,10 @@ that promise is in scope, in particular:
 - At K = N - 1 or K = N a single objection holds a subject. That is
   arithmetic the README states (Objections), not a veto bypass.
 - A signed approval is a bearer record with no expiry or revocation
-  (README, Roadmap). Replaying a valid one for the same subject is its
-  intended use.
+  (README, Roadmap). Presenting a valid one again, anywhere, for the same
+  subject is its intended use. An older one that displaces its signer's
+  newer ballot through `record` or a count is a different thing, and a
+  report.
 - A dependency advisory with no reachable path in this code. Dependabot
   files those (`.github/dependabot.yml`); if you believe a path exists,
   that is a report.
