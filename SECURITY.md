@@ -19,8 +19,8 @@ https://github.com/DrJesseGlass/ic-multisig/issues/new/choose
 ic-multisig's promise is that a tally says `reached` only when approvals
 of that subject from approvers currently in the policy, less their
 objections, reach K, and that a signed approval proves its approver made
-exactly that decision about exactly that subject. Anything that breaks that promise is in scope, in
-particular:
+exactly that decision about exactly that subject. Anything that breaks
+that promise is in scope, in particular:
 
 - signatures (`ed25519` feature): a record `ed25519::verify` accepts that
   the approver's key did not sign, a signature accepted for a different
